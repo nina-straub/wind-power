@@ -25,7 +25,7 @@ df_wind_pre <- readRDS('/Users/Nina/Documents/_Daten/_Studium/Master SDS/4. Somm
 df_elec <- df_elec_pre %>%
   mutate(pop_density = (population/area)*1000) %>%
   select(ags, ags_name, election_year, county, turnout, cdu, csu, spd, fdp, linke_pds, gruene, afd,
-         cdu_csu, far_right, far_left, far_left_w_linke, freie_wahler, pop_density)
+         cdu_csu, far_right, far_left, far_left_w_linke, freie_wahler, population, pop_density)
 
 df_wind <- df_wind_pre %>%
   rename(ags = AGS, election_year = year) %>%
@@ -62,15 +62,40 @@ unmatched_df_wind <- df_wind %>%
 # Can savely proceed in merging without loosing units
 # But fix ags of Obergeckler in df_wind and name in df_elec
 df_wind <- df_wind %>% mutate(ags = ifelse(trimws(toupper(GEN)) == "OBERGECKLER", "07232503", ags))
-df_elec <- df_elec %>% mutate(ags_name = ifelse(ags == "07232503", "Obergeckler", ags_name))
+df_elec <- df_elec %>% 
+  mutate(ags_name = case_when(
+    ags == "07232503" ~ "Obergeckler",
+    ags == "16076094" ~ "Berga-Wünschendorf, Stadt",
+    ags == "16061119" ~ "Uder",
+    TRUE ~ ags_name
+  ))
 
 
 ###################### Join df_elec and df_wind ######################
 
-df_panel <- df_elec %>% left_join(df_wind %>% select(-GEN), by = c("ags", "election_year"))
+df_panel_pre <- df_elec %>% left_join(df_wind %>% select(-GEN), by = c("ags", "election_year"))
 
-# Save data
-#saveRDS(df_panel, '/Users/Nina/Documents/_Daten/_Studium/Master SDS/4. Sommer 2026/P5 Master Thesis/_data/df_panel_wo_cov.rds')
+
+###################### Construct treatment and other variables ######################
+
+# Absorbing treatment indicator
+df_panel_wo_cov <- df_panel_pre %>%
+  mutate(
+    dummy_lag_wind_count_3km = ifelse(cum_lag_wind_count_3km > 0, 1, 0),
+    cat_cum_lag_wind_count_3km = cut(cum_lag_wind_count_3km,
+                                     breaks = c(-1, 0, seq(10, 100, by = 10), Inf),
+                                     labels = c("0", "1–10", "11–20", "21–30", "31–40", "41–50",
+                                                "51–60", "61–70", "71–80", "81–90", "91–100", ">100"),
+                                     right = TRUE),
+    treat_nonabsorbing = as.integer(wind_count_3km > 0)) %>%
+  arrange(ags, election_year) %>%
+  group_by(ags) %>%
+  mutate(treat_absorbing = as.integer(cumsum(wind_count_3km) > 0)) %>%
+  ungroup()
+
+
+###################### Save data ######################
+#saveRDS(df_panel_wo_cov, '/Users/Nina/Documents/_Daten/_Studium/Master SDS/4. Sommer 2026/P5 Master Thesis/_data/df_panel_wo_cov.rds')
 
 
 ###################### Add covariates ######################
