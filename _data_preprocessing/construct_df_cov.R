@@ -37,9 +37,9 @@ year_recode <- function(year) {
 ###################### Municipality Level ######################
 
 file_list_muni <- list(
-  average_age = "/Users/Nina/Downloads/_covariate_data/average_age.csv",
-  pop_fem = "/Users/Nina/Downloads/_covariate_data/pop_fem.csv",
-  unemp = "/Users/Nina/Downloads/_covariate_data/unemp.csv"
+  average_age = "_data/_covariate_data/average_age.csv",
+  pop_fem = "_data/_covariate_data/pop_fem.csv",
+  unemp = "_data/_covariate_data/unemp.csv"
 )
 
 cov_list_muni <- imap(file_list_muni, function(path, cov_name) {
@@ -83,9 +83,9 @@ df_covariates_muni <- cov_list_muni %>%
 ###################### County Level ######################
 
 file_list_county <- list(
-  hinc = "/Users/Nina/Downloads/_covariate_data/hinc.csv",
-  share_foreign = "/Users/Nina/Downloads/_covariate_data/share_foreign.csv",
-  educ = "/Users/Nina/Downloads/_covariate_data/educ.csv"
+  hinc = "_data/_covariate_data/hinc.csv",
+  share_foreign = "_data/_covariate_data/share_foreign.csv",
+  educ = "_data/_covariate_data/educ.csv"
 )
 
 cov_list_county <- imap(file_list_county, function(path, cov_name) {

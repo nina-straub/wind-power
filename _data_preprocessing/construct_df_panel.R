@@ -14,7 +14,7 @@ gerda_data_list(print_table = TRUE)
 df_elec_pre <- load_gerda_web("federal_muni_harm_25")
 
 # Wind power counts
-df_wind_pre <- readRDS('/Users/Nina/Documents/_Daten/_Studium/Master SDS/4. Sommer 2026/P5 Master Thesis/_data/df_wp_count.rds')
+df_wind_pre <- readRDS('_data/df_wp_count.rds')
 
 # Covariates
 
@@ -97,7 +97,7 @@ df_panel_wo_cov <- df_panel_pre %>%
 
 
 ###################### Save data ######################
-#saveRDS(df_panel_wo_cov, '/Users/Nina/Documents/_Daten/_Studium/Master SDS/4. Sommer 2026/P5 Master Thesis/_data/df_panel_wo_cov.rds')
+#saveRDS(df_panel_wo_cov, '_data/df_panel_wo_cov.rds')
 
 
 ###################### Add covariates ######################

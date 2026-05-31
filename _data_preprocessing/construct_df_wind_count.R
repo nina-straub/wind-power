@@ -10,13 +10,13 @@ library(lubridate)
 library(stringr)
 
 #### Load municipality spatial data files ####
-shapefile_path <- '/Users/Nina/Documents/_Daten/_Studium/Master SDS/4. Sommer 2026/P5 Master Thesis/_data/_shapefiles/VG250_GEM.shp'
+shapefile_path <- '_data/_shapefiles/VG250_GEM.shp'
 municipalities <- st_read(shapefile_path)
 municipalities <- municipalities %>% mutate(AGS = as.character(AGS))
 filtered_municipalities <- municipalities
 
 #### Load wind power plant unit data ####
-wind_units <- readRDS('/Users/Nina/Documents/_Daten/_Studium/Master SDS/4. Sommer 2026/P5 Master Thesis/_data/df_wind_units_all.rds')
+wind_units <- readRDS('_data/df_wind_units_all.rds')
 
 ########### Construct Count Variable ###########
 
@@ -214,7 +214,7 @@ wind_long_df <- joined_stage1 %>%
 
 
 # Save data
-#saveRDS(wind_long_df, '/Users/Nina/Documents/_Daten/_Studium/Master SDS/4. Sommer 2026/P5 Master Thesis/_data/df_wp_count.rds')
+#saveRDS(wind_long_df, '_data/df_wp_count.rds')
 
 
 
