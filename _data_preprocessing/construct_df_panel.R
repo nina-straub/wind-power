@@ -1,4 +1,4 @@
-###################### Data pre-processing ######################
+###################### Combine GERDA Election Data with Wind Power Count Data ######################
 
 ###################### Load packages & data ######################
 
@@ -72,6 +72,8 @@ df_elec <- df_elec %>%
 
 
 ###################### Join df_elec and df_wind ######################
+# This leads to 205 municipalities in df_wind being dropped
+# 204 of them are uninhabited, one (Wiedenborstel) has only 10 inhabitants
 
 df_panel_pre <- df_elec %>% left_join(df_wind %>% select(-GEN), by = c("ags", "election_year"))
 
