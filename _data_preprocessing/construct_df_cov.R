@@ -2,18 +2,30 @@
 #' Covariates Municipality Level:
 #' - average age, 2002-2023
 #' - population female, 1995-2023
-#' - number of unemployed, 1998-2023
 #' 
+#' - income tax, 1995-2023
+#' - business tax, 1995-2023
+#' - tax revenue, 1995-2023
+#' 
+#' - employees subject to social security contributions in their place of residence, 1998-2023
+#' - workplace density, 2000-2023
+#' - number of unemployed, 1998-2023
+#' - commuter balance, 1998-2023
+#' 
+#' - number of overnight stays in tourist accommodations, 2009-2023
+#' - net migration, 1995-2023
+#' - purchasing power, 2013-2023
+#' - agricultural land, 2017-2023
 #' 
 #' Covariates County Level:
 #' - average monthly household income, 2000-2022
-#' - share of foreign populationm 1995-2023
+#' - share of foreign population 1995-2023
 #' - share of working population with vocational qualifications, 2012-2023
-#' 
 #' 
 #' Covariates Constructed:
 #' - share of female population, 1995-2023
 #' - unemployment rate, 1998-2023
+#' - share of population subject to social security contributions through employment, 1998-2023
 
 ###################### Prep ######################
 
@@ -29,6 +41,7 @@ year_recode <- function(year) {
     year > 2021        ~ 2025L,
     year %in% c(1999, 2000) ~ 1998L,
     year %in% c(1995, 1996) ~ 1994L,
+    year %in% c(2004) ~ 2005L,
     TRUE               ~ as.integer(year)
   )
 }
@@ -39,12 +52,24 @@ year_recode <- function(year) {
 file_list_muni <- list(
   average_age = "_data/_covariate_data/average_age.csv",
   pop_fem = "_data/_covariate_data/pop_fem.csv",
-  unemp = "_data/_covariate_data/unemp.csv"
+  unemp = "_data/_covariate_data/unemp.csv",
+  
+  inc_tax = "_data/_covariate_data/inc_tax.csv",
+  busi_tax = "_data/_covariate_data/busi_tax.csv",
+  tax_rev = "_data/_covariate_data/tax_rev.csv",
+  
+  agri_land = "_data/_covariate_data/agri_land.csv",
+  commute_balance = "_data/_covariate_data/commute_balance.csv",
+  dens_work = "_data/_covariate_data/dens_work.csv",
+  employees = "_data/_covariate_data/employees.csv",
+  net_migration = "_data/_covariate_data/net_migration.csv",
+  purch_pow = "_data/_covariate_data/purch_pow.csv",
+  tourism = "_data/_covariate_data/tourism.csv"
 )
 
 cov_list_muni <- imap(file_list_muni, function(path, cov_name) {
   
-  df_raw <- read.csv2(path, skip = 1)
+  df_raw <- read.csv2(path, skip = 1, colClasses = "character")
   df_raw$ags <- str_pad(as.character(df_raw$X), width = 8, side = "left", pad = "0")
   
   df_long <- df_raw %>%
@@ -132,48 +157,5 @@ df_covariates <- df_covariates_muni %>%
   left_join(df_covariates_county, by = c("county_ags", "election_year")) %>%
   select(-county_name, -county_ags)
 
-
-###################### Merge covariate data to df_panel_wo_cov ######################
-
-# Check ags overlap in both directions
-# In df_panel_wo_cov but not in df_covariates
-cat("AGS in df_panel_wo_cov but NOT in df_covariates:\n")
-anti_join(df_panel_wo_cov, df_covariates, by = "ags") %>% distinct(ags) %>% print()
-
-# In df_covariates but not in panel:
-in_cov_not_panel <- unique(df_covariates$ags)[!unique(df_covariates$ags) %in% unique(df_panel_wo_cov$ags)]
-cat("AGS in df_covariates but NOT in df_panel_wo_cov:", length(in_cov_not_panel), "\n")
-ags_in_cov_not_panel <- anti_join(df_covariates, df_panel_wo_cov, by = "ags") %>% 
-  distinct(ags, ags_name)
-
-# Fix wrong ags of "Obergeckler", "Uder" and "Berga/Elster, Stadt" in df_av_age
-df_covariates <- df_covariates %>%
-  mutate(ags = case_when(
-    ags_name == "Obergeckler" ~ "07232503",
-    ags_name == "Uder" ~ "16061119",
-    ags_name == "Berga/Elster, Stadt" ~ "16076094",
-    TRUE ~ ags
-  ))
-
-# Left join
-df_panel_cov <- df_panel_wo_cov %>%
-  left_join(df_covariates %>% select(-ags_name),
-            by = c("ags", "election_year"))
-
-# Verify NA patterns look right
-df_panel_cov %>%
-  group_by(election_year) %>%
-  summarise(n_missing = sum(is.na(share_foreign)),
-            n_total = n()) %>%
-  print()
-
-
-###################### Calculate Shares ######################
-
-df_panel_cov <- df_panel_cov %>%
-  mutate(
-    share_fem   = pop_fem / (population*1000),
-    share_unemp = unemp / (population*1000)
-  )
-
+#saveRDS(df_covariates, '_data/df_covariates.rds')
 

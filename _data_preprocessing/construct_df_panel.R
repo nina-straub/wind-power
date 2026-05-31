@@ -17,7 +17,7 @@ df_elec_pre <- load_gerda_web("federal_muni_harm_25")
 df_wind_pre <- readRDS('_data/df_wp_count.rds')
 
 # Covariates
-
+df_covariates <- readRDS('_data/df_covariates.rds')
 
 
 ###################### Filter df_elec and df_wind for columns of interest ######################
@@ -101,6 +101,57 @@ df_panel_wo_cov <- df_panel_pre %>%
 
 
 ###################### Add covariates ######################
+
+# Check ags overlap in both directions
+# In df_panel_wo_cov but not in df_covariates
+cat("AGS in df_panel_wo_cov but NOT in df_covariates:\n")
+anti_join(df_panel_wo_cov, df_covariates, by = "ags") %>% distinct(ags) %>% print()
+
+# In df_covariates but not in panel:
+in_cov_not_panel <- unique(df_covariates$ags)[!unique(df_covariates$ags) %in% unique(df_panel_wo_cov$ags)]
+cat("AGS in df_covariates but NOT in df_panel_wo_cov:", length(in_cov_not_panel), "\n")
+ags_in_cov_not_panel <- anti_join(df_covariates, df_panel_wo_cov, by = "ags") %>% 
+  distinct(ags, ags_name)
+
+# Fix wrong ags of "Obergeckler", "Uder" and "Berga/Elster, Stadt" in df_av_age
+df_covariates <- df_covariates %>%
+  mutate(ags = case_when(
+    ags_name == "Obergeckler" ~ "07232503",
+    ags_name == "Uder" ~ "16061119",
+    ags_name == "Berga/Elster, Stadt" ~ "16076094",
+    TRUE ~ ags
+  ))
+
+# Left join
+# This leads to 229 municipalities in df_covariates being dropped
+# 204 of them are uninhabited, one (Wiedenborstel) has only 10 inhabitants
+# 19 are municipalities merged or split between 2023 and 2025 harmonisation standards, and crosswalks are not yet available
+# Most importantly, no municipalities for which election results and wind power counts exist are dropped
+df_panel_cov <- df_panel_wo_cov %>%
+  left_join(df_covariates %>% select(-ags_name),
+            by = c("ags", "election_year"))
+
+# Verify NA patterns look right
+df_panel_cov %>%
+  group_by(election_year) %>%
+  summarise(n_missing = sum(is.na(share_foreign)),
+            n_total = n()) %>%
+  print()
+
+
+###################### Calculate Shares ######################
+
+df_panel_cov <- df_panel_cov %>%
+  mutate(
+    share_fem   = pop_fem/(population*1000),
+    share_unemp = unemp/(population*1000),
+    share_emp = employees/(population*1000)
+  )
+
+###################### Save data ######################
+#saveRDS(df_panel_cov, '_data/df_panel_cov.rds')
+
+
 
 
 
