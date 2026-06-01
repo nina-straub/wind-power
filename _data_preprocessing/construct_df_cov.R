@@ -83,6 +83,7 @@ cov_list_muni <- imap(file_list_muni, function(path, cov_name) {
     mutate(
       election_year = as.integer(str_remove(election_year, "X")),
       election_year = year_recode(election_year),
+      !!cov_name   := trimws(as.character(.data[[cov_name]])),
       !!cov_name   := na_if(as.character(.data[[cov_name]]), "-"),
       !!cov_name   := as.numeric(gsub(",", ".", gsub("\\.", "", gsub("\\s+", "", .data[[cov_name]]))))
     ) %>%
@@ -115,7 +116,7 @@ file_list_county <- list(
 
 cov_list_county <- imap(file_list_county, function(path, cov_name) {
   
-  df_raw <- read.csv2(path, skip = 1)
+  df_raw <- read.csv2(path, skip = 1, colClasses = "character")
   df_raw$county_ags <- str_pad(as.character(df_raw$X), width = 5, side = "left", pad = "0")
   
   df_long <- df_raw %>%
@@ -129,6 +130,7 @@ cov_list_county <- imap(file_list_county, function(path, cov_name) {
     mutate(
       election_year = as.integer(str_remove(election_year, "X")),
       election_year = year_recode(election_year),
+      !!cov_name   := trimws(as.character(.data[[cov_name]])),
       !!cov_name   := na_if(as.character(.data[[cov_name]]), "-"),
       !!cov_name   := as.numeric(gsub(",", ".", gsub("\\.", "", gsub("\\s+", "", .data[[cov_name]]))))
     ) %>%

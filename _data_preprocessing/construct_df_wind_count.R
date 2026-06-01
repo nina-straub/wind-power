@@ -104,7 +104,7 @@ wind_long_df <- bind_rows(results_list) %>%
 ########### Robustness Check: WP Count at Municipality Level (No Buffer) ###########
 # Note: Using this specification not via GPS coordinates but via AGS leads to a few unidentified municipalities (N = 23)
 # Unidentified means that when merging this data with wind_long_df, they do neither have a matching AGS nor name
-# In total 132 wind power plants of 28630 are lost in this specification (0.46%)
+# In total, there are 75 wind power plants less in this specification compared to the 0km specification (28555 vs. 28630, 0.26%)
 
 wind_units_muni <- wind_units %>%
   rename(construction_date = Inbetriebnahmedatum.der.Einheit,

@@ -60,7 +60,7 @@ unmatched_df_wind <- df_wind %>%
 # 205 units, all of which are uninhabited or have very low number of inhabitants (e.g. Wiedenborstel)
 
 # Can savely proceed in merging without loosing units
-# But fix ags of Obergeckler in df_wind and name in df_elec
+# But fix ags of Obergeckler in df_wind and names in df_elec
 df_wind <- df_wind %>% mutate(ags = ifelse(trimws(toupper(GEN)) == "OBERGECKLER", "07232503", ags))
 df_elec <- df_elec %>% 
   mutate(ags_name = case_when(
@@ -80,7 +80,6 @@ df_panel_pre <- df_elec %>% left_join(df_wind %>% select(-GEN), by = c("ags", "e
 
 ###################### Construct treatment and other variables ######################
 
-# Absorbing treatment indicator
 df_panel_wo_cov <- df_panel_pre %>%
   mutate(
     dummy_lag_wind_count_3km = ifelse(cum_lag_wind_count_3km > 0, 1, 0),
@@ -92,7 +91,9 @@ df_panel_wo_cov <- df_panel_pre %>%
     treat_nonabsorbing = as.integer(wind_count_3km > 0)) %>%
   arrange(ags, election_year) %>%
   group_by(ags) %>%
-  mutate(treat_absorbing = as.integer(cumsum(wind_count_3km) > 0)) %>%
+  mutate(treat_absorbing = as.integer(cumsum(wind_count_3km) > 0),
+         treat_absorbing_cs = ifelse(is.infinite(min(election_year[wind_count_3km > 0], na.rm = TRUE)),
+                                     0, min(election_year[wind_count_3km > 0], na.rm = TRUE))) %>%
   ungroup()
 
 
@@ -107,7 +108,7 @@ df_panel_wo_cov <- df_panel_pre %>%
 cat("AGS in df_panel_wo_cov but NOT in df_covariates:\n")
 anti_join(df_panel_wo_cov, df_covariates, by = "ags") %>% distinct(ags) %>% print()
 
-# In df_covariates but not in panel:
+# In df_covariates but not in df_panel_wo_cov
 in_cov_not_panel <- unique(df_covariates$ags)[!unique(df_covariates$ags) %in% unique(df_panel_wo_cov$ags)]
 cat("AGS in df_covariates but NOT in df_panel_wo_cov:", length(in_cov_not_panel), "\n")
 ags_in_cov_not_panel <- anti_join(df_covariates, df_panel_wo_cov, by = "ags") %>% 
@@ -143,9 +144,9 @@ df_panel_cov %>%
 
 df_panel_cov <- df_panel_cov %>%
   mutate(
-    share_fem   = pop_fem/(population*1000),
-    share_unemp = unemp/(population*1000),
-    share_emp = employees/(population*1000)
+    share_fem   = if_else(population == 0, NA_real_, pop_fem / (population * 1000)),
+    share_unemp = if_else(population == 0, NA_real_, unemp / (population * 1000)),
+    share_emp   = if_else(population == 0, NA_real_, employees / (population * 1000))
   )
 
 ###################### Save data ######################
