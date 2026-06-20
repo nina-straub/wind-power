@@ -1,6 +1,10 @@
 ################ Debug script contdid application ################
+# When trying to implement analysis with contdid, encountered multiple errors
+# This script documents these errors and their root causes
+# Insight: Some parts of the package (level + dose and slope + dose) cannot be used bc. of these bugs
 
 #### Clean df ####
+# Make sure the df is clean to prevent potential bugs due to NA etc.
 df_clean <- df_did_ready %>%
   group_by(ags) %>%
   mutate(
@@ -14,7 +18,7 @@ df_clean <- df_did_ready %>%
   ) %>%
   ungroup() %>%
   filter(
-    !is.na(df_did_ready$turnout),           # drop all NA in relevant variables
+    !is.na(df_did_ready$turnout),
     !is.na(treat_dose),
     !is.na(ags),
     !is.na(seq_time),
@@ -50,6 +54,7 @@ df_balanced %>%
 
 
 #### Run different estimation specifications ####
+# Check which specifications work in the clean, balance setup
 
 # 1. slope - eventstudy
 res1 <- cont_did(
@@ -129,7 +134,7 @@ res3 <- cont_did(
   target_parameter = "level",
   aggregation     = "eventstudy",
   treatment_type  = "continuous",
-  control_group   = "notyettreated",
+  control_group   = "nevertreated",
   biters          = 1000,
   cband           = TRUE,
   num_knots       = 0,
@@ -180,6 +185,7 @@ summary(res3)
 ggcont_did(res3, type = "att")
 
 # --> Error wasn't detected bc. "simulate_contdid_data" only simulates doses (0, 1)
+# Bug was reported: https://github.com/bcallaway11/contdid/issues/11
 
 
 # 4. slope - dose
@@ -212,7 +218,7 @@ res4 <- cont_did(
 # "using pointwise confidence interal" --> "using pointwise confidence interval"
 
 
-# Minimal Reproducible Example for "level + eventstudy"
+#### Minimal Reproducible Example for "level + eventstudy" ####
 # Change D <- runif(n, 0, 1) to D <- runif(n, 0, 1.1)
 sim_contdid_dat_changed <- function(
     n = 5000,

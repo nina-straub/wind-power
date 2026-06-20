@@ -52,6 +52,69 @@ panelview(data = df_panel_cov,
           display.all = TRUE)
 
 
+###################### Overlap of Propensity Scores for CS-DiD by Cohort ######################
+
+# Create sequential treatment variable
+df_panel_cov_did <- df_panel_cov %>%
+  mutate(
+    # Create sequential time index (1 to 10) for did package
+    seq_time = match(election_year, unique_years),
+    # Create sequential group index (never treated == 0) for did package
+    seq_group = match(treat_absorbing_cs, unique_years),
+    seq_group = ifelse(is.na(seq_group), 0, seq_group),
+    east_ger = ifelse(substr(ags, 1, 2) %in% c("12", "13", "14", "15", "16"), 1, 0))
+
+#### Formula for conditional parallel trends ####
+covariates_formula <- ~ pop_density + east_ger
+
+# Initialize list
+plot_list <- list()
+
+# Loop through cohorts 2 to 10
+for (g in 2:10) {
+  # Set period to the one before treatment
+  current_seq_time <- g - 1
+  # Filter data for specific cohort and never-treated group at correct pre-treatment time
+  df_filtered <- df_panel_cov_did %>% 
+    filter(seq_time == current_seq_time & (seq_group == g | seq_group == 0))
+  # Estimate propensity score
+  ps_model_g <- glm(ifelse(seq_group == g, 1, 0) ~ pop_density + east_ger,
+                    data = df_filtered, family = binomial())
+  # Predict propensity scores and assign to df
+  df_filtered$pscore <- predict(ps_model_g, type = "response")
+  # Create plot
+  p <- ggplot(df_filtered, aes(x = pscore, fill = factor(ifelse(seq_group > 0, 1, 0)))) +
+    geom_density(alpha = 0.5) +
+    scale_fill_manual(values = c("steelblue", "tomato"),
+                      labels = c("Control", "Treated"),
+                      name = "") +
+    labs(title = paste("Cohort", g, "(Period", current_seq_time, ")"),
+         x = "Propensity Score", y = "Density") +
+    theme_minimal() +
+    theme(legend.position = "none") # Remove individual legends
+  # Store plot in list
+  plot_list[[g - 1]] <- p
+}
+
+# Extract the legend from one of the plots
+shared_legend_plot <- ggplot(df_filtered, aes(x = pscore, fill = factor(ifelse(seq_group > 0, 1, 0)))) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = c("steelblue", "tomato"),
+                    labels = c("Never Treated", "Treated"),
+                    name = "") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+shared_legend <- get_legend(shared_legend_plot)
+
+# Arrange 3x3 grid
+main_grid <- plot_grid(plotlist = plot_list, ncol = 3, nrow = 3)
+
+# Combine main grid and shared legend
+final_plot <- plot_grid(main_grid, shared_legend, ncol = 1, rel_heights = c(1, 0.05))
+# Display the final plot
+final_plot
+
+
 ###################### Wind Power over the Years ######################
 # Plot coded with help of claude.ai
 
