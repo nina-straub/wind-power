@@ -111,10 +111,10 @@ covariate_str <- "~ treat_absorbing"
 
 # Shorten data bc. vector memory was reached
 did_short <- df_did_ready %>%
-  filter(election_year > 1990, str_starts(as.character(ags), "12"))
+  filter(election_year < 2026)
 
 # Run decomposition
-bacon_results <- map(outcome_vars, ~run_bacon_decomposition(.x, did_short, covariate_str)) %>% set_names(outcome_vars)
+bacon_results <- map(outcome_vars, ~run_bacon_decomposition(.x, did_short, "~ treat_absorbing")) %>% set_names(outcome_vars)
 
 # Combine 2x2 decompositions into df
 bacon_plot_data <- map_dfr(names(bacon_results), function(outcome) {
@@ -401,7 +401,7 @@ grid.arrange(grobs = plot_list_le, ncol = 3)
 outcome_vars <- c("turnout", "cdu", "csu", "spd", "fdp", 
                   "linke_pds", "gruene", "current_incumbent")
 
-# Fix options:
+# Set CS options:
 att_options_base <- list(
   tname = "seq_time",
   idname = "ags",
@@ -416,24 +416,26 @@ att_options_base <- list(
   base_period = "varying"
 )
 
-# Fix stages
-stages_cfg <- list(
-  list(year = 2002, suffix = "s1"),
+# Set stages
+stages <- list(
+  list(year = 2002, suffix = "s1"), # seq_time = 4
   list(year = 2005, suffix = "s2"),
   list(year = 2009, suffix = "s3"),
   list(year = 2013, suffix = "s4"),
   list(year = 2017, suffix = "s5")
 )
 
-# Generate and display the 5-row summary table
-pipeline_summary <- generate_pipeline_summary(df_did_ready, stages_cfg)
-pipeline_summary
+# Display table of treated and untreated units by stage
+generate_pipeline_summary(df_did_ready, stages, initial_filter_groups = c(4, 0))
 
-# Run loop across all 9 outcomes
-all_plots <- map(outcome_vars, ~run_sequential_stages(.x, att_options_base, stages_cfg))
+# Run loop across all outcomes
+seq_results <- map(outcome_vars, ~run_sequential_stages(.x, att_options_base, stages)) %>% set_names(outcome_vars)
 
-# Combine into a 3x3 grid with a shared legend
-final_grid <- wrap_plots(all_plots, ncol = 3, nrow = 3) + 
+# Create plot list
+seq_plots <- generate_sequential_plots(seq_results)
+
+# Combine into a 3x3 plot grid
+final_grid <- wrap_plots(seq_plots, ncol = 3, nrow = 3) + 
   plot_layout(guides = "collect") & 
   theme(legend.position = "bottom")
 
