@@ -156,40 +156,40 @@ ggplot(bacon_plot_data, aes(x = weight, y = estimate, shape = type, col = type))
   )
 
 
+
 ###################### Staggered DiD with binary, absorbing treatment (Callaway & Sant'Anna, 2021) ######################
 # Only conditional parallel trends need to hold, DR is default
 # Checked ps overlap in descriptive_analyses script
 # ToDo: Check if time-varying covariates such as pop_density evolve bc of treatment, e.g. through predicting pop_density or use net migration
 
-#### Formula for conditional parallel trends ####
-covariates_formula <- ~ pop_density + east_ger
-# Keeps periods from 1994:
-#covariates_formula <- ~ pop_density + share_fem + tax_rev
-# Keeps periods from 1998:
-#covariates_formula <- ~ pop_density + share_fem + tax_rev + hinc
+#### Set CS options ####
+# Set vars for conditional parallel trends with xformla
+att_options_base <- list(
+  data = df_did_ready,
+  tname = "seq_time",
+  idname = "ags",
+  gname = "seq_group",
+  xformla = ~ east_ger + pop_density,
+  panel = TRUE, 
+  allow_unbalanced_panel = TRUE,
+  clustervars = "ags",
+  control_group = "nevertreated",
+  anticipation = 0,
+  bstrap = TRUE,
+  biters = 1000
+)
 
+# Set vars for conditional parallel trends with xformla
+# Keeps all periods: ~ east_ger + pop_density,
+# Keeps periods from 1994: ~ pop_density + share_fem + tax_rev
+# Keeps periods from 1998: ~ pop_density + share_fem + tax_rev + hinc
 
 #### Estimate CS-DiD for all outcomes ####
 did_results <- map(outcome_vars, function(outcome_vars) {
   message(paste("Running CS-DiD for:", outcome_vars))
-  # Estimate (ATT(g,t))
-  atts <- att_gt(
-    yname = outcome_vars,
-    tname = "seq_time",
-    idname = "ags",
-    gname = "seq_group",
-    xformla = covariates_formula,
-    data = df_did_ready,
-    panel = TRUE,
-    allow_unbalanced_panel = TRUE,
-    clustervars = "ags",
-    control_group = "nevertreated",
-    anticipation = 0,
-    bstrap = TRUE,
-    biters = 1000,
-    base_period = "varying"
-  )
-  # Aggregate into event study
+  
+  atts <- do.call(att_gt, c(list(yname = outcome_vars), att_options_base))
+  
   es <- aggte(atts, type = "dynamic", na.rm = TRUE)
   return(list(atts = atts, es = es))
 }) %>% set_names(outcome_vars)
@@ -239,24 +239,9 @@ ggplot(att_df, aes(x = event_time, y = att)) +
 # Estimate CS-DiD for all outcomes using base_period = uniform
 did_results_uni <- map(outcome_vars, function(outcome_vars) {
   message(paste("Running CS-DiD for:", outcome_vars))
-  # Estimate (ATT(g,t))
-  atts <- att_gt(
-    yname = outcome_vars,
-    tname = "seq_time",
-    idname = "ags",
-    gname = "seq_group",
-    xformla = covariates_formula,
-    data = df_did_ready,
-    panel = TRUE,
-    allow_unbalanced_panel = TRUE,
-    clustervars = "ags",
-    control_group = "nevertreated",
-    anticipation = 0,
-    bstrap = TRUE,
-    biters = 1000,
-    base_period = "universal"
-  )
-  # Aggregate into event study
+  
+  atts <- do.call(att_gt, c(list(yname = outcome_vars, base_period = "universal"), att_options_base))
+  
   es <- aggte(atts, type = "dynamic", na.rm = TRUE)
   return(list(atts = atts, es = es))
 }) %>% set_names(outcome_vars)
@@ -303,13 +288,7 @@ generate_sensitivity_grid_plot(
 # Clean data
 df_clean <- df_did_ready %>%
   # Drop periods and group without within-period-dose variation and filter all NA
-  filter(
-    !is.na(treat_dose),
-    !is.na(ags),
-    !is.na(seq_time),
-    !is.na(pop_density),
-    election_year > 1994,
-    !seq_group == 2)
+  filter(!is.na(treat_dose), !is.na(ags), !is.na(seq_time), !is.na(pop_density), election_year > 1994, !seq_group == 2)
 # Balance panel
 expected_periods <- n_distinct(df_clean$seq_time)
 df_balanced <- df_clean %>%
@@ -394,27 +373,11 @@ grid.arrange(grobs = plot_list_le, ncol = 3)
 # 2.) Filter for units treated in period X
 # 3.) Use this sample to estimate effect of new WT in period X+1 (or X+2)
 # ToDo:
-# - Check if one can achieve a feasible sample size
 # - How to define treatment? Every unit receiving one turbine or should it be binned, somehow accounting for dose?
 
 # Outcomes (without AfD):
 outcome_vars <- c("turnout", "cdu", "csu", "spd", "fdp", 
                   "linke_pds", "gruene", "current_incumbent")
-
-# Set CS options:
-att_options_base <- list(
-  tname = "seq_time",
-  idname = "ags",
-  xformla = ~ east_ger + pop_density,
-  panel = TRUE, 
-  allow_unbalanced_panel = TRUE,
-  clustervars = "ags",
-  control_group = "nevertreated",
-  anticipation = 0,
-  bstrap = TRUE,
-  biters = 1000,
-  base_period = "varying"
-)
 
 # Set stages
 stages <- list(
@@ -425,11 +388,25 @@ stages <- list(
   list(year = 2017, suffix = "s5")
 )
 
+# Set CS options
+att_opt_seq <- list(
+  tname = "seq_time",
+  idname = "ags",
+  xformla = ~ east_ger + pop_density,
+  panel = TRUE, 
+  allow_unbalanced_panel = TRUE,
+  clustervars = "ags",
+  control_group = "nevertreated",
+  anticipation = 0,
+  bstrap = TRUE,
+  biters = 1000
+)
+
 # Display table of treated and untreated units by stage
 generate_pipeline_summary(df_did_ready, stages, initial_filter_groups = c(4, 0))
 
 # Run loop across all outcomes
-seq_results <- map(outcome_vars, ~run_sequential_stages(.x, att_options_base, stages)) %>% set_names(outcome_vars)
+seq_results <- map(outcome_vars, ~run_sequential_stages(.x, att_opt_seq, stages)) %>% set_names(outcome_vars)
 
 # Create plot list
 seq_plots <- generate_sequential_plots(seq_results)
