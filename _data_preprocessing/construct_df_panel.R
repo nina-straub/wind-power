@@ -154,8 +154,48 @@ df_panel_cov <- df_panel_cov %>%
 
 
 
+###################### Make data DiD ready ######################
+# Re-construct treatment variables for different packages & add additional subgroup dummies
 
+# Add variables
+df_did_ready <- df_panel_cov %>%
+  mutate(
+    # Create sequential time index (1 to 10) for did package
+    seq_time = match(election_year, sort(unique(df_panel_cov$election_year))),
+    # Create sequential group index (never treated == 0) for did package
+    seq_group = match(treat_absorbing_cs, sort(unique(df_panel_cov$election_year))),
+    seq_group = ifelse(is.na(seq_group), 0, seq_group),
+    # Create time-to-treatment variable for fixest package
+    time_to_treatment = ifelse(seq_group > 0, seq_time - seq_group, -1000),
+    # Clean lagged wind count variable of NAs
+    cat_cum_lag_wind_count_3km = ifelse(election_year == 1990 & is.na(cat_cum_lag_wind_count_3km),
+                                        0, cat_cum_lag_wind_count_3km),
+    # Create current incumbent election results
+    current_incumbent = case_when(
+      election_year %in% c(1990, 1994, 1998, 2013) ~ coalesce(cdu, 0) + coalesce(csu, 0) + coalesce(fdp, 0),
+      election_year %in% c(2002, 2005) ~ coalesce(spd, 0) + coalesce(gruene, 0),
+      election_year %in% c(2009, 2017, 2021) ~ coalesce(cdu, 0) + coalesce(csu, 0) + coalesce(spd, 0),
+      election_year == 2025 ~ coalesce(gruene, 0) + coalesce(spd, 0) + coalesce(fdp, 0),
+      TRUE ~ NA_real_),
+    # Create "other parties" election results
+    others = 1 - (coalesce(cdu, 0) + coalesce(afd, 0) + coalesce(csu, 0)
+                  + coalesce(spd, 0) + coalesce(fdp, 0) + coalesce(linke_pds, 0)
+                  + coalesce(gruene, 0)),
+    # Add east Germany dummy
+    east_ger = ifelse(substr(ags, 1, 2) %in% c("12", "13", "14", "15", "16"), 1, 0)) %>%
+  # Create dose variable for contdid package
+  group_by(ags) %>%
+  mutate(treat_dose = if (any(seq_group > 0)) {
+    max(wind_count_3km[seq_time == seq_group], na.rm = TRUE)
+  } else {
+    wind_count_3km
+  }) %>%
+  ungroup() %>%
+  # Ensure ID variable is numeric for the did package
+  mutate(ags = as.numeric(ags)) %>%
+  as.data.frame()
 
-
+###################### Save data ######################
+# saveRDS(df_did_ready, '_data/df_did_ready.rds')
 
 
