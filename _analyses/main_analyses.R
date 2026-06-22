@@ -70,6 +70,8 @@ did_short <- df_did_ready %>%
 # Run decomposition
 bacon_results <- map(outcome_vars, ~run_bacon_decomposition(.x, did_short, "~ treat_absorbing")) %>% set_names(outcome_vars)
 
+# saveRDS(bacon_results, '_results/res_bacon_decomp.rds')
+
 # Combine 2x2 decompositions into df
 bacon_plot_data <- map_dfr(names(bacon_results), function(outcome) {
   df_2x2 <- bacon_results[[outcome]]
@@ -87,7 +89,7 @@ twfe_means <- bacon_plot_data %>%
   summarize(bgd_wm = weighted.mean(estimate, weight), .groups = "drop")
 
 # Plot results
-ggplot(bacon_plot_data, aes(x = weight, y = estimate, shape = type, col = type)) +
+bacon_plot <- ggplot(bacon_plot_data, aes(x = weight, y = estimate, shape = type, col = type)) +
   # Add outcome-specific TWFE horizontal line
   geom_hline(data = twfe_means, aes(yintercept = bgd_wm), lty = 2, color = "darkgray") +
   # Add  points
@@ -109,6 +111,7 @@ ggplot(bacon_plot_data, aes(x = weight, y = estimate, shape = type, col = type))
     subtitle = "Dotted lines depict the full TWFE estimate for each outcome."
   )
 
+# ggsave(filename = "_results/_figures/plot_bacon_decomp.png", plot = bacon_plot, width = 12, height = 8, dpi = 300)
 
 
 ###################### Staggered DiD with binary, absorbing treatment (Callaway & Sant'Anna, 2021) ######################
@@ -410,24 +413,10 @@ run_fect_nonabs <- function(outcome, controls, data) {
 }
 
 #### Run for all outcomes ####
-fect_nonabs_results <- map(outcome_vars, ~run_fect_nonabs(.x, control_vars, df_did_ready))
-names(fect_nonabs_results) <- outcome_vars
+fect_nonabs_results <- map(outcome_vars, ~run_fect_nonabs(.x, control_vars, df_did_ready)) %>% set_names(outcome_vars)
 
 
 #### Plot results ####
-grid.arrange(
-  plot(fect_nonabs_results[[outcome_vars[1]]], main = outcome_vars[1]),
-  plot(fect_nonabs_results[[outcome_vars[2]]], main = outcome_vars[2]),
-  plot(fect_nonabs_results[[outcome_vars[3]]], main = outcome_vars[3]),
-  plot(fect_nonabs_results[[outcome_vars[4]]], main = outcome_vars[4]),
-  plot(fect_nonabs_results[[outcome_vars[5]]], main = outcome_vars[5]),
-  plot(fect_nonabs_results[[outcome_vars[6]]], main = outcome_vars[6]),
-  plot(fect_nonabs_results[[outcome_vars[7]]], main = outcome_vars[7]),
-  plot(fect_nonabs_results[[outcome_vars[8]]], main = outcome_vars[8]),
-  plot(fect_nonabs_results[[outcome_vars[9]]], main = outcome_vars[9]),
-  ncol = 3,
-  top = textGrob("FECT Absorbing DiD - All Outcomes",
-                 gp = gpar(fontsize = 16, fontface = "bold"))
-)
-
+plot_list <- map(outcome_vars, function(var) {plot(fect_nonabs_results[[var]], main = var)})
+grid.arrange(grobs = plot_list, ncol = 3, top = textGrob("FECT Absorbing DiD - All Outcomes"))
 

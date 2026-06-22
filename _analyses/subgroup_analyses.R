@@ -2,8 +2,16 @@
 
 ###################### Set the scene  ######################
 
+#### Packages ####
+library(dplyr)
+library(purrr)
+library(stringr)
+library(ggplot2)
+
+library(did)
+
 #### Data ####
-# df_did_ready from main analysis script
+df_did_ready <- readRDS("_data/df_did_ready.rds")
 
 #### For subgroup analysis ####
 
@@ -99,6 +107,13 @@ df_intensity <- reduce(thresholds, function(df, thresh) {
     ) %>% 
     ungroup()
 }, .init = df_did_ready)
+
+# Units treated once
+# Discard all units treated more than once
+df_treat_once <- df_did_ready %>%
+  group_by(ags) %>%
+  filter(sum(treat_nonabsorbing, na.rm = TRUE) <= 1) %>%
+  ungroup()
 
 
 #### Outcomes & CS Options ####
@@ -279,3 +294,179 @@ walk(paste0("treat_", thresholds), function(thresh) {
 })
 
 
+############## Units treated once ##############
+# Check distribution of units treated once, twice, etc.
+df_did_ready %>%
+  group_by(ags) %>%
+  summarise(total_treat = sum(treat_nonabsorbing, na.rm = TRUE)) %>%
+  count(total_treat)
+
+# Check if 0 - 1 holds in filtered df
+df_treat_once %>%
+  group_by(ags) %>%
+  summarise(total_treat = sum(treat_nonabsorbing, na.rm = TRUE)) %>%
+  count(total_treat)
+
+# Estimation loop
+did_treat_once <- run_csdid_pipeline(df_treat_once, outcome_vars, label = "One-time Treatment")
+
+
+
+############## Counterfactual Estimator instead of CS-DiD ##############
+
+# Control variables
+control_vars <- " ~ treat_absorbing + pop_density"
+
+#### fect estimation function ####
+run_fect_abs <- function(outcome, controls, data) {
+  message(paste("Running fect (absorbing) for:", outcome))
+  formula <- as.formula(paste0(outcome, controls))
+  fit <- fect(
+    formula,
+    data    = data,
+    index   = c("ags", "seq_time"),
+    method  = "ife",
+    force   = "two-way",
+    se      = TRUE,
+    nboots  = 1500,
+    min.T0  = 1
+  )
+  return(fit)
+}
+
+#### Run for all outcomes ####
+fect_abs_results <- map(outcome_vars, ~run_fect_abs(.x, control_vars, df_did_ready)) %>% set_names(outcome_vars)
+
+#### Plot results ####
+plot_list <- map(outcome_vars, function(var) {plot(fect_abs_results[[var]], main = var)})
+grid.arrange(grobs = plot_list, ncol = 3, top = textGrob("FECT Absorbing DiD - All Outcomes"))
+
+
+
+############## De-meaning: Unit-Specific Linear Pre-Treatment Trends ##############
+
+detrend_outcome <- function(df, outcome_var, id_var = "ags", 
+                            time_var = "seq_time", group_var = "seq_group") {
+  
+  df %>%
+    group_by(across(all_of(id_var))) %>%
+    mutate(
+      # Pre-treatment = periods before unit's treatment cohort (never-treated: all periods)
+      is_pre = (.data[[time_var]] < .data[[group_var]]) | (.data[[group_var]] == 0),
+      
+      # Estimate unit-specific linear trend on pre-treatment periods only
+      trend_coef = {
+        pre_data <- cur_data()[cur_data()$is_pre & !is.na(cur_data()[[outcome_var]]), ]
+        if (nrow(pre_data) >= 3) {  # need minimum obs for reliable trend
+          coef(lm(reformulate(time_var, response = outcome_var), data = pre_data))[[time_var]]
+        } else {
+          NA_real_
+        }
+      },
+      
+      # Center time within unit (avoids large intercept; trend removal is origin-invariant)
+      time_centered = .data[[time_var]] - min(.data[[time_var]][is_pre], na.rm = TRUE),
+      
+      # Subtract extrapolated trend from ALL periods (pre + post)
+      "{outcome_var}_detrended" := .data[[outcome_var]] - trend_coef * time_centered
+      
+    ) %>%
+    ungroup() %>%
+    select(-is_pre, -trend_coef, -time_centered)
+}
+
+
+#### Apply detrending to all outcomes, add detrended cols to df ####
+
+detrended_vars <- paste0(outcome_vars, "_detrended")
+
+df_did_detrended <- reduce(outcome_vars, function(df, var) {
+  detrend_outcome(df, outcome_var = var)
+}, .init = df_did_ready)
+
+# Quick sanity check: how many units had too few pre-periods for trend estimation?
+map(detrended_vars, function(var) {
+  n_na <- sum(is.na(df_did_detrended[[var]]))
+  n_total <- nrow(df_did_detrended)
+  message(glue::glue("{var}: {n_na} NAs ({round(n_na/n_total*100,1)}%)"))
+})
+
+
+#### Estimate CS-DiD on detrended outcomes ####
+
+detrended_vars <- c("turnout_detrended", "cdu_detrended", "csu_detrended", "spd_detrended", "fdp_detrended",
+                    "linke_pds_detrended", "gruene_detrended", "afd_detrended", "current_incumbent_detrended")
+
+did_results_detrended <- map(detrended_vars, function(outcome_var) {
+  message(paste("Running detrended CS-DiD for:", outcome_var))
+  
+  atts <- do.call(att_gt, c(
+    list(yname = outcome_var),
+    att_options_base           # reuse your existing options but change data input
+  ))
+  
+  es <- aggte(atts, type = "dynamic", na.rm = TRUE)
+  return(list(atts = atts, es = es))
+}) %>% set_names(detrended_vars)
+
+
+
+
+#### Create event study plots for all outcomes ####
+plot_list <- map(detrended_vars, function(var) {
+  p <- ggdid(did_results_detrended[[var]]$es) +
+    ggtitle(var) +
+    theme_minimal()
+  return(p)
+})
+grid.arrange(grobs = plot_list, ncol = 3)
+
+
+#### Compare pre-trends: original vs detrended (key diagnostic) ####
+
+# For a single outcome, overlay both event studies
+compare_pretrends <- function(var) {
+  
+  orig     <- did_results[[var]]$es
+  detrend  <- did_results_detrended[[paste0(var, "_detrended")]]$es
+  
+  bind_rows(
+    tibble(
+      e       = orig$egt,
+      att     = orig$att.egt,
+      se      = orig$se.egt,
+      spec    = "Original"
+    ),
+    tibble(
+      e       = detrend$egt,
+      att     = detrend$att.egt,
+      se      = detrend$se.egt,
+      spec    = "Detrended"
+    )
+  ) %>%
+    mutate(
+      ci_lo = att - 1.96 * se,
+      ci_hi = att + 1.96 * se
+    ) %>%
+    ggplot(aes(x = e, y = att, color = spec, fill = spec)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+    geom_vline(xintercept = -0.5, linetype = "dashed", color = "grey40") +
+    geom_ribbon(aes(ymin = ci_lo, ymax = ci_hi), alpha = 0.15, color = NA) +
+    geom_line() +
+    geom_point() +
+    scale_color_manual(values = c("Original" = "#2C3E50", "Detrended" = "#E74C3C")) +
+    scale_fill_manual(values  = c("Original" = "#2C3E50", "Detrended" = "#E74C3C")) +
+    labs(
+      title    = glue::glue("Event Study: {var}"),
+      subtitle = "Original vs. unit-trend detrended outcome",
+      x        = "Periods relative to treatment",
+      y        = "ATT estimate",
+      color    = NULL, fill = NULL
+    ) +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+}
+
+# Plot for all outcomes
+comparison_plots <- map(outcome_vars, compare_pretrends)
+grid.arrange(grobs = comparison_plots, ncol = 3)
