@@ -7,8 +7,12 @@ library(dplyr)
 library(purrr)
 library(stringr)
 library(ggplot2)
-
+library(gridExtra)
 library(did)
+
+
+#### Helper functions ####
+source("_support_functions/twfe_did_mult_outcome_wrapper.R")
 
 #### Data ####
 df_did_ready <- readRDS("_data/df_did_ready.rds")
@@ -140,40 +144,6 @@ att_options_base <- list(
   bstrap = TRUE,
   biters = 1000
 )
-
-
-###################### Main CS Pipline Estimation Function ######################
-
-run_csdid_pipeline <- function(data, outcomes, label = "", formula = ~ pop_density + east_ger, options = att_options_base, gname = "seq_group") {
-  
-  # Override default group name in options if a custom one is supplied
-  options$gname <- gname
-  
-  # Run CS-DiD models across all outcomes
-  results <- map(outcomes, function(outcome) {
-    message(paste("Running CS-DiD for:", outcome, ifelse(label != "", paste("|", label), "")))
-    
-    # Merge core arguments with base list options
-    args_list <- c(list(yname = outcome, data = data, xformla = formula), options)
-    atts <- do.call(att_gt, args_list)
-    es   <- aggte(atts, type = "dynamic", na.rm = TRUE)
-    
-    return(list(atts = atts, es = es))
-  }) %>% set_names(outcomes)
-  
-  # Generate plots
-  plot_list <- map(outcomes, function(var) {
-    ggdid(results[[var]]$es) +
-      ggtitle(paste0(var, " (", label, ")")) +
-      theme_minimal()
-  })
-  
-  grid.arrange(grobs = plot_list, ncol = 3, top = if(label != "") label else NULL)
-  
-  # Return results list
-  return(results)
-}
-
 
 
 ###################### Without and Only Bavaria ######################
@@ -311,6 +281,32 @@ df_treat_once %>%
 did_treat_once <- run_csdid_pipeline(df_treat_once, outcome_vars, label = "One-time Treatment")
 
 
+###################### Identifying Assumptions and Alterntive Outcomes ######################
+# Does treatment affect net migration or agricultural land size? If yes --> Signs for sorting/negative effects of treatment
+# Does it affect education or share of female/foreign population? If yes --> Signs for sorting
+outcomes_alt <- c("net_migration", "agri_land", "educ", "share_fem", "share_foreign")
+did_alt <- run_csdid_pipeline(df_did_ready, outcomes_alt, label = "Test Assumptions", formula = ~ pop_density + east_ger)
+
+# How are socioeconomic indicators affected?
+# Could give idea on mechanisms --> If positive effect on tax/employment etc., positive perception of WP
+outcomes_se <- c("inc_tax", "busi_tax", "tax_rev", "commute_balance", "dens_work", "purch_pow", "tourism", "hinc", "share_unemp", "share_emp")
+did_se <- run_csdid_pipeline(df_did_ready, outcomes_se, label = "Socioeconomic Indicators", formula = ~ pop_density + east_ger)
+
+# Are there east - west differences?
+did_see <- run_csdid_pipeline(df_east, outcomes_se, label = "Socioeconomic Indicators- East", formula = ~ pop_density)
+did_sew <- run_csdid_pipeline(df_west, outcomes_se, label = "Socioeconomic Indicators- West", formula = ~ pop_density)
+# Yes, there are!
+# No effects on hinc AND voting in East Germnany but negative effects on both in West Germany
+
+# Control for lagged vote share
+# To reduce variance in outcome --> Good control according to Cinelli et al.
+df_did_ready <- df_did_ready %>% arrange(ags, election_year) %>% group_by(ags) %>% 
+  mutate(lag_far_right = lag(far_right, 1), lag_cdu_csu = lag(cdu_csu, 1), lag_spd = lag(spd, 1),
+         lag_gruene = lag(gruene, 1), lag_fdp = lag(fdp, 1), lag_linke_pds = lag(linke_pds, 1), lag_turnout = lag(turnout, 1))
+did_lag <- run_csdid_pipeline(df_did_ready, outcome_vars, label = "Controlling for Lag", 
+                              formula = ~ pop_density + east_ger + lag_far_right + lag_cdu_csu + lag_spd + lag_gruene
+                              + lag_fdp + lag_linke_pds + lag_turnout)
+
 
 ############## Counterfactual Estimator instead of CS-DiD ##############
 
@@ -328,11 +324,12 @@ run_fect_abs <- function(outcome, controls, data) {
     method  = "ife",
     force   = "two-way",
     se      = TRUE,
-    nboots  = 1500,
+    nboots  = 1000,
     min.T0  = 1
   )
   return(fit)
 }
+
 
 #### Run for all outcomes ####
 fect_abs_results <- map(outcome_vars, ~run_fect_abs(.x, control_vars, df_did_ready)) %>% set_names(outcome_vars)
@@ -470,3 +467,5 @@ compare_pretrends <- function(var) {
 # Plot for all outcomes
 comparison_plots <- map(outcome_vars, compare_pretrends)
 grid.arrange(grobs = comparison_plots, ncol = 3)
+
+
