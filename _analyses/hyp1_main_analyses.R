@@ -38,7 +38,7 @@ outcome_vars <- c("turnout", "cdu", "csu", "spd", "fdp",
 ###################### TWFE Event Study ######################
 
 # Controls
-covariates_str <- "+ pop_density + cat_cum_lag_wind_count_3km"
+covariates_str <- "+ pop_density"
 
 # Estimate TWFE event study
 twfe_results <- map(outcome_vars, ~run_twfe_event_study(outcome = .x, data = df_did_ready, covariates = covariates_str))
@@ -47,14 +47,21 @@ names(twfe_results) <- outcome_vars
 # Summary of outcomes
 etable(map(twfe_results, ~ .x$model), keep = "time_to_treatment")
 
-# Plot results
-par(mfrow = c(3, 3))
-for (i in 1:9) {
-  iplot(twfe_results[[i]], 
-        main = paste(outcome_vars[i], "(Ref: 1 Year Pre-Treatment)"))
-  }
-par(mfrow = c(1, 1))
 
+# Plot results
+plot_twfe <- function() {
+  par(mfrow = c(3, 3))
+  for (i in 1:9) {
+    iplot(twfe_results[[i]], 
+          main = paste(outcome_vars[i], "(Ref: 1 Year Pre-Treatment)"))
+  }
+  par(mfrow = c(1, 1))
+}
+
+# To save it to a file:
+# png("_results/hyp1_main_analyses/_figures/plot_twfe.png", width = 1200, height = 800)
+plot_twfe()
+dev.off()
 
 
 ###################### Goodman-Bacon Decomposition (Goodman-Bacon, 2021) ######################
@@ -70,7 +77,7 @@ did_short <- df_did_ready %>%
 # Run decomposition
 bacon_results <- map(outcome_vars, ~run_bacon_decomposition(.x, did_short, "~ treat_absorbing")) %>% set_names(outcome_vars)
 
-# saveRDS(bacon_results, '_results/res_bacon_decomp.rds')
+# saveRDS(bacon_results, '_results/hyp1_main_analyses/res_bacon_decomp.rds')
 
 # Combine 2x2 decompositions into df
 bacon_plot_data <- map_dfr(names(bacon_results), function(outcome) {
@@ -111,7 +118,7 @@ bacon_plot <- ggplot(bacon_plot_data, aes(x = weight, y = estimate, shape = type
     subtitle = "Dotted lines depict the full TWFE estimate for each outcome."
   )
 
-# ggsave(filename = "_results/_figures/plot_bacon_decomp.png", plot = bacon_plot, width = 12, height = 8, dpi = 300)
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_bacon_decomp.png", plot = bacon_plot, width = 12, height = 8, dpi = 300)
 
 
 ###################### Staggered DiD with binary, absorbing treatment (Callaway & Sant'Anna, 2021) ######################
@@ -159,8 +166,9 @@ plot_list <- map(outcome_vars, function(var) {
     theme_minimal()
   return(p)
 })
-grid.arrange(grobs = plot_list, ncol = 3)
+plot_cs_did <- grid.arrange(grobs = plot_list, ncol = 3)
 
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_cs_did.png", plot = plot_cs_did, width = 12, height = 8, dpi = 300)
 
 #### Create cohort-specific plots for one outcome ####
 # Extract ATT(g,t) estimates
@@ -208,23 +216,31 @@ did_results_uni <- map(outcome_vars, function(outcome_vars) {
 # Smoothness
 honest_smooth_results <- map(outcome_vars, ~run_honest_smoothness(.x, did_results_uni)) %>% set_names(outcome_vars)
 
+# saveRDS(honest_smooth_results, '_results/hyp1_main_analyses/res_honest_smooth.rds')
+
 # Relative Magnitude
 honest_rm_results <- map(outcome_vars, ~run_honest_rm(.x, did_results_uni, mbar_seq = seq(0, 0.5, by = 0.05))) %>% set_names(outcome_vars)
 
+# saveRDS(honest_rm_results, '_results/hyp1_main_analyses/res_honest_rm.rds')
+
+
 #### Generate plots ####
 # Smoothness Grid
-generate_sensitivity_grid_plot(
+plot_honest_smooth <- generate_sensitivity_grid_plot(
   outcome_vars = outcome_vars, 
   results_list = honest_smooth_results, 
   type = "smooth", 
   ncol = 3)
 
 # Relative Magnitudes Grid
-generate_sensitivity_grid_plot(
+plot_honest_rm <- generate_sensitivity_grid_plot(
   outcome_vars = outcome_vars, 
   results_list = honest_rm_results, 
   type = "rm", 
   ncol = 3)
+
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_honest_smooth.png", plot = plot_honest_smooth, width = 12, height = 8, dpi = 300)
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_honest_rm.png", plot = plot_honest_rm, width = 12, height = 8, dpi = 300)
 
 
 ###################### Staggered DiD with continuous, absorbing treatment (Callaway, Goodman-Bacon & Sant'Anna, 2025) ######################
@@ -246,16 +262,14 @@ generate_sensitivity_grid_plot(
 df_clean <- df_did_ready %>%
   # Drop periods and group without within-period-dose variation and filter all NA
   filter(!is.na(treat_dose), !is.na(ags), !is.na(seq_time), !is.na(pop_density), election_year > 1994, !seq_group == 2)
-# Balance panel
-expected_periods <- n_distinct(df_clean$seq_time)
-df_balanced <- df_clean %>%
-  group_by(ags) %>%
-  filter(n() == expected_periods) %>%
-  ungroup()
 
 # Slope + eventstudy
 did_results_se <- map(outcome_vars, function(var) {
-  df_temp <- df_balanced %>% filter(!is.na(.data[[var]]))
+  df_temp <- df_clean %>%
+    filter(!is.na(.data[[var]])) %>%
+    group_by(ags) %>% 
+    filter(n() == n_distinct(.$seq_time)) %>% 
+    ungroup()
   res_cont_did <- cont_did(
     yname = var,
     tname = "seq_time",
@@ -275,6 +289,8 @@ did_results_se <- map(outcome_vars, function(var) {
   return(list(res = res_cont_did))
 }) %>% set_names(outcome_vars)
 
+# saveRDS(did_results_se, '_results/hyp1_main_analyses/res_contdid_se.rds')
+# Watch out, file is about 2.6GB/637MB compressed
 
 #### Create event study plots for all outcomes ####
 plot_list_se <- map(outcome_vars, function(var) {
@@ -283,15 +299,22 @@ plot_list_se <- map(outcome_vars, function(var) {
     theme_minimal()
 })
 
-grid.arrange(grobs = plot_list_se, ncol = 3)
+plot_contdid_se <- grid.arrange(grobs = plot_list_se, ncol = 3)
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_contdid_se.png", plot = plot_contdid_se, width = 12, height = 8, dpi = 300)
 
 
 # Level - eventstudy
 # Needs treat_dose to be between 0 and 1
-df_balanced <- df_balanced %>% mutate (treat_dose_squish = treat_dose / (1 + treat_dose))
+# Also: Balance panel outside loop
+df_clean <- df_clean %>%
+  mutate(treat_dose_squish = treat_dose / (1 + treat_dose))
 
 did_results_le <- map(outcome_vars, function(var) {
-  df_temp <- df_balanced %>% filter(!is.na(.data[[var]]))
+  df_temp <- df_clean %>%
+    filter(!is.na(.data[[var]])) %>%
+    group_by(ags) %>% 
+    filter(n() == n_distinct(.$seq_time)) %>% 
+    ungroup()
   res_cont_did <- cont_did(
     yname = var,
     tname = "seq_time",
@@ -311,6 +334,8 @@ did_results_le <- map(outcome_vars, function(var) {
   return(list(res = res_cont_did))
 }) %>% set_names(outcome_vars)
 
+# saveRDS(did_results_le, '_results/hyp1_main_analyses/res_contdid_le.rds')
+# Watch out, file is about 2.5GB/750MB compressed
 
 #### Create event study plots for all outcomes ####
 plot_list_le <- map(outcome_vars, function(var) {
@@ -319,7 +344,8 @@ plot_list_le <- map(outcome_vars, function(var) {
     theme_minimal()
 })
 
-grid.arrange(grobs = plot_list_le, ncol = 3)
+plot_contdid_le <- grid.arrange(grobs = plot_list_le, ncol = 3)
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_contdid_le.png", plot = plot_contdid_le, width = 12, height = 8, dpi = 300)
 
 
 
@@ -333,8 +359,8 @@ grid.arrange(grobs = plot_list_le, ncol = 3)
 # - How to define treatment? Every unit receiving one turbine or should it be binned, somehow accounting for dose?
 
 # Outcomes (without AfD):
-outcome_vars <- c("turnout", "cdu", "csu", "spd", "fdp", 
-                  "linke_pds", "gruene", "current_incumbent")
+outcome_vars_wo_afd <- c("turnout", "cdu", "csu", "spd", "fdp", 
+                  "linke_pds", "gruene", "far_right", "current_incumbent")
 
 # Set stages
 stages <- list(
@@ -363,7 +389,9 @@ att_opt_seq <- list(
 generate_pipeline_summary(df_did_ready, stages, initial_filter_groups = c(4, 0))
 
 # Run loop across all outcomes
-seq_results <- map(outcome_vars, ~run_sequential_stages(.x, att_opt_seq, stages)) %>% set_names(outcome_vars)
+seq_results <- map(outcome_vars_wo_afd, ~run_sequential_stages(.x, att_opt_seq, stages)) %>% set_names(outcome_vars_wo_afd)
+
+# saveRDS(seq_results, '_results/hyp1_main_analyses/res_seq_treat.rds')
 
 # Create plot list
 seq_plots <- generate_sequential_plots(seq_results)
@@ -375,28 +403,21 @@ final_grid <- wrap_plots(seq_plots, ncol = 3, nrow = 3) +
 
 final_grid
 
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_seq_treat.png", plot = final_grid, width = 12, height = 8, dpi = 300)
+
 
 ###################### Staggered DiD with Spatial Spillover (Butts, 2021) ######################
 # Let's see if this rabbit hole is worth it to go down
 
-###################### Staggered DiD with non-absorbing treatment ######################
-# Is it non-absorbing?
-# Or rather:
-# - Is treatment multiple times? This specification would lead to a growth of potential outcomes
-# - The many different potential outcomes make weighting, comparisons and estimates very hard to interpret
-# - One could make assumption "treatment effect fades after 5 years"
-# - Or "first treatment is only treatment" and then put dummy for subsequent treatment (see Bailey & Goodman-Bacon)
-# - Or put unit multiple times in their data set 
 
-# Possible additional tests with fect package: "no pretrend test" and "no carryover effect test"
-# Need to test/assess exogeneity assumption, control for lagged vote share (potentially)
+###################### Use Counterfactual Estimator ######################
+# Liu et al. (2024)
 
 #### Controls ####
-
-control_vars <- " ~ treat_nonabsorbing + pop_density + share_fem + hinc + share_foreign + tax_rev"
+control_vars <- " ~ treat_absorbing + pop_density"
 
 #### fect estimation function ####
-run_fect_nonabs <- function(outcome, controls, data) {
+run_fect_estim <- function(outcome, controls, data) {
   message(paste("Running fect (non-absorbing) for:", outcome))
   formula <- as.formula(paste0(outcome, controls))
   fit <- fect(
@@ -406,17 +427,50 @@ run_fect_nonabs <- function(outcome, controls, data) {
     method  = "ife",
     force   = "two-way",
     se      = TRUE,
-    nboots  = 1000,
+    nboots  = 200,
     min.T0  = 1
   )
   return(fit)
 }
 
 #### Run for all outcomes ####
-fect_nonabs_results <- map(outcome_vars, ~run_fect_nonabs(.x, control_vars, df_did_ready)) %>% set_names(outcome_vars)
+res_fect_absorb <- map(outcome_vars, ~run_fect_estim(.x, control_vars, df_did_ready)) %>% set_names(outcome_vars)
 
+# saveRDS(res_fect_absorb, '_results/res_fect_absorb.rds')
+
+#### Plot results ####
+plot_list <- map(outcome_vars, function(var) {plot(fect_abs_results[[var]], main = var)})
+plot_fect_absorb <- grid.arrange(grobs = plot_list, ncol = 3, top = textGrob("FECT Absorbing DiD - All Outcomes"))
+
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_fect_absorb.png", plot = plot_fect_absorb, width = 12, height = 8, dpi = 300)
+
+
+
+###################### New Specification of Treatment ######################
+# Treatment is neither absorbing nor non-absorbing, but multiple times with different doses
+# Idea: Investigate this multiple treatment effect through new specification
+# 1.) Estimate effect of first WT in period X
+# 2.) Filter for units treated in period X
+# 3.) Use this sample to estimate effect of new WT in period X+1 (or X+2)
+# ToDo:
+# - How to define treatment? Every unit receiving one turbine or should it be binned, somehow accounting for dose?
+
+#### Controls ####
+control_vars <- " ~ treat_nonabsorbing + pop_density"
+
+#### Run for all outcomes ####
+res_fect_nonabsorb <- map(outcome_vars, ~run_fect_estim(.x, control_vars, df_did_ready)) %>% set_names(outcome_vars)
+
+# saveRDS(res_fect_nonabsorb, '_results/res_fect_nonabsorb.rds')
 
 #### Plot results ####
 plot_list <- map(outcome_vars, function(var) {plot(fect_nonabs_results[[var]], main = var)})
-grid.arrange(grobs = plot_list, ncol = 3, top = textGrob("FECT Absorbing DiD - All Outcomes"))
+plot_fect_nonabsorb <- grid.arrange(grobs = plot_list, ncol = 3, top = textGrob("FECT Nonabsorbing DiD - All Outcomes"))
+
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_fect_nonabsorb.png", plot = plot_fect_nonabsorb, width = 12, height = 8, dpi = 300)
+
+
+
+
+
 

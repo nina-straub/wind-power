@@ -80,7 +80,7 @@ df_gruene_l <- df_did_ready %>%
 # Distance Variation
 # Create new seq_group over 4 distances
 election_years <- sort(unique(df_did_ready$election_year))
-distances <- c("0km", "3km", "5km", "10km")
+distances <- c("0km", "1km", "3km", "5km", "10km")
 df_distance <- df_did_ready %>%
   group_by(ags) %>%
   mutate(across(
@@ -168,12 +168,15 @@ did_early_pol <- run_csdid_pipeline(df_early, outcome_vars_wo_afd, label = "Earl
 did_late_pol  <- run_csdid_pipeline(df_late, outcome_vars_wo_afd, label = "Late (Polarisation)")
 
 # Tax Hypothesis
-did_early_tax <- run_csdid_pipeline(df_early, outcome_vars_wo_afd, label = "Early (Tax)")
-did_late_tax  <- run_csdid_pipeline(df_late, outcome_vars, label = "Late (Tax)")
+did_early_tax <- run_csdid_pipeline(df_early, outcome_vars_wo_afd, label = "Early - Tax Split")
+did_late_tax  <- run_csdid_pipeline(df_late, outcome_vars_wo_afd, label = "Late - Tax Split")
+
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_honest_smooth.png", plot = plot_honest_smooth, width = 12, height = 8, dpi = 300)
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_honest_rm.png", plot = plot_honest_rm, width = 12, height = 8, dpi = 300)
 
 
 ###################### Interaction: Late x West Germany ######################
-did_west_late <- run_csdid_pipeline(df_west_late, outcome_vars, label = "Interaction: Late x West Germany")
+did_west_late <- run_csdid_pipeline(df_west_late, outcome_vars, label = "Interaction: Late x West Germany", formula = ~ pop_density)
 
 
 ############## High vs. Low Density ##############

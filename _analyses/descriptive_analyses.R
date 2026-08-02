@@ -10,10 +10,12 @@ library(sf)
 library(panelView)
 library(ggplot2)
 library(gridExtra)
+library(patchwork)
 
 #### Data ####
 
 df_panel_cov <- readRDS('_data/df_panel_cov.rds')
+df_did_ready <- readRDS('_data/df_did_ready.rds')
 
 ###################### Technical Check: Treatment Variables ######################
 
@@ -33,14 +35,18 @@ comparison_table <- df_panel_cov %>%
 
 print(comparison_table)
 
-# Panel view absorbing treatment
-panelview(data = df_panel_cov,
+# Panel View: Staggered and Absorbing Treatment
+panel <- panelview(data = df_panel_cov,
           index = c("ags", "election_year"),
           D = "treat_absorbing",
-          main = "Panel View: Staggered & Absorbing Treatment",
+          main = "",
           xlab = "Year", 
           ylab = "Municipalities",
-          display.all = TRUE)
+          display.all = TRUE,
+          cex.main = 10,
+          cex.lab = 18,
+          cex.axis = 18,
+          cex.legend = 18)
 
 # Panel view non-absorbing treatment
 panelview(data = df_panel_cov,
@@ -51,18 +57,10 @@ panelview(data = df_panel_cov,
           ylab = "Municipalities",
           display.all = TRUE)
 
+# ggsave(filename = "_results//descriptive_results/plot_panel_treat.png", plot = panel, width = 12, height = 8, dpi = 300)
+
 
 ###################### Overlap of Propensity Scores for CS-DiD by Cohort ######################
-
-# Create sequential treatment variable
-df_panel_cov_did <- df_panel_cov %>%
-  mutate(
-    # Create sequential time index (1 to 10) for did package
-    seq_time = match(election_year, unique_years),
-    # Create sequential group index (never treated == 0) for did package
-    seq_group = match(treat_absorbing_cs, unique_years),
-    seq_group = ifelse(is.na(seq_group), 0, seq_group),
-    east_ger = ifelse(substr(ags, 1, 2) %in% c("12", "13", "14", "15", "16"), 1, 0))
 
 #### Formula for conditional parallel trends ####
 covariates_formula <- ~ pop_density + east_ger
@@ -75,7 +73,7 @@ for (g in 2:10) {
   # Set period to the one before treatment
   current_seq_time <- g - 1
   # Filter data for specific cohort and never-treated group at correct pre-treatment time
-  df_filtered <- df_panel_cov_did %>% 
+  df_filtered <- df_did_ready %>% 
     filter(seq_time == current_seq_time & (seq_group == g | seq_group == 0))
   # Estimate propensity score
   ps_model_g <- glm(ifelse(seq_group == g, 1, 0) ~ pop_density + east_ger,
@@ -84,13 +82,13 @@ for (g in 2:10) {
   df_filtered$pscore <- predict(ps_model_g, type = "response")
   # Create plot
   p <- ggplot(df_filtered, aes(x = pscore, fill = factor(ifelse(seq_group > 0, 1, 0)))) +
-    geom_density(alpha = 0.5) +
-    scale_fill_manual(values = c("steelblue", "tomato"),
+    geom_density(alpha = 0.7) +
+    scale_fill_manual(values = c("#2a4d7c", "#e2b13c"),
                       labels = c("Control", "Treated"),
                       name = "") +
     labs(title = paste("Cohort", g, "(Period", current_seq_time, ")"),
          x = "Propensity Score", y = "Density") +
-    theme_minimal() +
+    theme_minimal(base_size = 14) +
     theme(legend.position = "none") # Remove individual legends
   # Store plot in list
   plot_list[[g - 1]] <- p
@@ -98,8 +96,8 @@ for (g in 2:10) {
 
 # Extract the legend from one of the plots
 shared_legend_plot <- ggplot(df_filtered, aes(x = pscore, fill = factor(ifelse(seq_group > 0, 1, 0)))) +
-  geom_density(alpha = 0.5) +
-  scale_fill_manual(values = c("steelblue", "tomato"),
+  geom_density(alpha = 0.7) +
+  scale_fill_manual(values = c("#2a4d7c", "#e2b13c"),
                     labels = c("Never Treated", "Treated"),
                     name = "") +
   theme_minimal() +
@@ -110,9 +108,11 @@ shared_legend <- get_legend(shared_legend_plot)
 main_grid <- plot_grid(plotlist = plot_list, ncol = 3, nrow = 3)
 
 # Combine main grid and shared legend
-final_plot <- plot_grid(main_grid, shared_legend, ncol = 1, rel_heights = c(1, 0.05))
+final_ps_plot <- plot_grid(main_grid, shared_legend, ncol = 1, rel_heights = c(1, 0.05))
 # Display the final plot
-final_plot
+final_ps_plot
+
+# ggsave(filename = "_results//descriptive_results/plot_ps_overlap.png", plot = final_ps_plot, width = 12, height = 8, dpi = 300)
 
 
 ###################### Wind Power over the Years ######################
@@ -133,39 +133,54 @@ df_wp <- df_panel_cov %>%
     west_cum  = cumsum(west)
   )
 
-colors <- c(total = "#333333", west = "#2166AC", east = "#D6604D")
+# Define shared styling vectors
+colors <- c(total = "#333333", west = "#084594", east = "#e2b13c")
 alphas <- c(total = 1, west = 0.45, east = 0.45)
 
+# --- Plot 1 ---
 p1 <- df_wp %>%
   pivot_longer(c(total, east, west), names_to = "region", values_to = "count") %>%
   mutate(region = factor(region, levels = c("total", "west", "east"))) %>%
   ggplot(aes(x = election_year, y = count, colour = region, alpha = region)) +
-  geom_line(linewidth = 1) + geom_point(size = 2) +
+  geom_line(linewidth = 1) + 
+  geom_point(size = 2) +
   scale_colour_manual(values = colors, labels = c("Total", "West", "East")) +
   scale_alpha_manual(values = alphas, guide = "none") +
-  labs(title = "New Wind Turbines per Year", x = NULL, y = "Number of WTs", colour = NULL) +
-  theme_minimal(base_size = 12)
+  labs(title = "A.)", x = NULL, y = "Number of WTs", colour = NULL) +
+  theme_minimal(base_size = 20)
 
+# --- Plot 2 ---
 p2 <- df_wp %>%
   pivot_longer(c(total_cum, east_cum, west_cum), names_to = "region", values_to = "count") %>%
-  mutate(region = factor(region, levels = c("total_cum", "west_cum", "east_cum"))) %>%
+  mutate(region = case_when(
+    region == "total_cum" ~ "total",
+    region == "west_cum"  ~ "west",
+    region == "east_cum"  ~ "east"
+  )) %>%
+  mutate(region = factor(region, levels = c("total", "west", "east"))) %>%
   ggplot(aes(x = election_year, y = count, colour = region, alpha = region)) +
-  geom_line(linewidth = 1) + geom_point(size = 2) +
-  scale_colour_manual(values = setNames(colors, paste0(names(colors), "_cum")),
-                      labels = c("Total", "West", "East")) +
-  scale_alpha_manual(values = setNames(alphas, paste0(names(alphas), "_cum")), guide = "none") +
-  labs(title = "Cumulative Wind Turbines", x = NULL, y = NULL, colour = NULL) +
-  theme_minimal(base_size = 12) + theme(legend.position = "right")
+  geom_line(linewidth = 1) + 
+  geom_point(size = 2) +
+  # FIX: Now using the exact same color vector and scale as Plot 1
+  scale_colour_manual(values = colors, labels = c("Total", "West", "East")) +
+  scale_alpha_manual(values = alphas, guide = "none") +
+  labs(title = "B.)", x = NULL, y = NULL, colour = NULL) +
+  theme_minimal(base_size = 20)
 
-grid.arrange(p1, p2, ncol = 2)
-dev.off()
+# --- Combine using patchwork ---
+plot_wt_dev <- (p1 + p2) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+# ggsave(filename = "_results//descriptive_results/plot_wt_dev.png", plot = plot_wt_dev, width = 15, height = 8, dpi = 300)
+
 
 
 ###################### Election Outcomes over the Years ######################
 # Plot coded with help of claude.ai
 
 party_colors <- c(
-  cdu       = "#2C2C2C",
+  cdu_csu   = "#2C2C2C",
   spd       = "#E3000F",
   fdp       = "#FFCC00",
   linke_pds = "#BE3075",
@@ -174,21 +189,23 @@ party_colors <- c(
 )
 
 df_panel_cov %>%
-  select(election_year, cdu, spd, fdp, linke_pds, gruene, afd) %>%
+  select(election_year, cdu_csu, spd, fdp, linke_pds, gruene, afd) %>%
   pivot_longer(-election_year, names_to = "party", values_to = "share") %>%
   group_by(election_year, party) %>%
   summarise(share = mean(share, na.rm = TRUE), .groups = "drop") %>%
   ggplot(aes(x = election_year, y = share, colour = party)) +
+  geom_hline(yintercept = 0.05, colour = "grey", linetype = "dashed", linewidth = 0.8) +
   geom_line(linewidth = 1) +
   geom_point(size = 2) +
   scale_colour_manual(
     values = party_colors,
-    labels = c(cdu = "CDU", spd = "SPD", fdp = "FDP",
-               linke_pds = "Linke/PDS", gruene = "Grüne", afd = "AfD")
+    labels = c(cdu_csu = "CDU/CSU", spd = "SPD", fdp = "FDP", linke_pds = "Linke/PDS", gruene = "Grüne", afd = "AfD")
   ) +
-  labs(title = "Mean vote share by party", x = NULL, y = "Vote share (%)", colour = NULL) +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "right")
+  labs(x = NULL, y = "Vote share (%)", colour = NULL) +
+  theme_minimal(base_size = 20) +
+  theme(legend.position = "bottom")
+
+# ggsave(filename = "_results//descriptive_results/plot_voteshare_panel.png", plot = plot_voteshare_panel, width = 12, height = 8, dpi = 300)
 
 
 ###################### Spatial distribution Wind Power in Germany ######################
@@ -237,15 +254,15 @@ make_map <- function(year) {
       name     = "Turbines",
       breaks   = c(0, cap/3, cap/1.5, cap),
       labels   = c("0", round(cap/3), round(cap/1.5), paste0(">", round(cap))),
-      guide    = guide_colorbar(barwidth = 0.5, barheight = 4, title.position = "top")
+      guide    = guide_colorbar(barwidth = 0.8, barheight = 6, title.position = "top")
     ) +
     labs(title = year) +
-    theme_void(base_size = 10) +
+    theme_void(base_size = 18) +
     theme(
-      plot.title      = element_text(hjust = 0.5, face = "bold", size = 11),
+      plot.title      = element_text(hjust = 0.5, face = "bold", size = 15),
       legend.position = "right",
-      legend.text     = element_text(size = 7),
-      legend.title    = element_text(size = 8)
+      legend.text     = element_text(size = 11),
+      legend.title    = element_text(size = 12)
     )
 }
 
@@ -254,8 +271,10 @@ p2 <- make_map(2009)
 p3 <- make_map(2017)
 p4 <- make_map(2025)
 
-grid.arrange(p1, p2, p3, p4, nrow = 2)
+plot_wt_dist <- grid.arrange(p1, p2, p3, p4, nrow = 2)
 dev.off()
+ggsave(filename = "_results//descriptive_results/plot_wt_dist.png", plot = plot_wt_dist, width = 12, height = 8, dpi = 300)
+
 
 
 ###################### Availability of Covariates across periods ######################
@@ -294,35 +313,51 @@ df_plot <- covariates %>%
   crossing(year = years) %>%
   mutate(
     available = year >= start & year <= end,
-    imputed   = available & ((year == 1994 & imp_1994) | (year == 2025 & imp_2025))
+    imputed   = available & ((year == 1994 & imp_1994) | (year == 2025 & imp_2025)),
+    status    = case_when(
+      imputed ~ "imputed",
+      available & !imputed ~ "available",
+      TRUE ~ NA_character_
+    )
   )
 
 group_colors <- c(
-  "Outcomes"     = "#4a6fa5",
-  "Municipality" = "#4a7c59",
-  "County"       = "#8b5e3c"
+  "Outcomes"     = "#2a4d7c",
+  "Municipality" = "#629460",
+  "County"       = "#e2b13c"
 )
 
-ggplot(df_plot, aes(x = factor(year), y = variable)) +
+
+# Plotting
+plot_data_avail <- ggplot(df_plot, aes(x = factor(year), y = variable)) +
   geom_tile(aes(fill = group, alpha = available), colour = "white", linewidth = 0.4) +
-  geom_text(data = filter(df_plot, available & !imputed),
-            label = "o", size = 3, colour = "white") +
-  geom_text(data = filter(df_plot, imputed),
-            label = "~", size = 3.4, colour = "white") +
+  
+  # Replaced geom_text layers with a single geom_point layer mapping shapes
+  geom_point(data = filter(df_plot, !is.na(status)),
+             aes(shape = status), colour = "white", size = 5.5) +
+  
   scale_fill_manual(values = group_colors, name = NULL) +
   scale_alpha_manual(values = c("TRUE" = 0.8, "FALSE" = 0.07), guide = "none") +
-  labs(title = "Covariate Availability by Election Year",
-       subtitle = "o = available    ~ imputed",
-       x = NULL, y = NULL) +
-  theme_minimal(base_size = 11) +
+  
+  # FIX: Added override.aes to make the legend text/shapes visible (grey30)
+  scale_shape_manual(
+    values = c("available" = "o", "imputed" = "~"), 
+    name = NULL,
+    guide = guide_legend(override.aes = list(colour = "grey30", size = 4))
+  ) +
+  
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 14) +
   theme(
     panel.grid      = element_blank(),
-    axis.text.y     = element_text(size = 8.5, colour = "grey30"),
-    axis.text.x     = element_text(size = 8.5, colour = "grey30"),
-    legend.position = "top",
-    legend.text     = element_text(size = 9, colour = "grey30"),
-    plot.title      = element_text(size = 11, face = "bold", colour = "grey20", margin = margin(b = 4)),
-    plot.subtitle   = element_text(size = 8.5, colour = "grey50", margin = margin(b = 8)),
+    axis.text.y     = element_text(size = 11, colour = "grey10"),
+    axis.text.x     = element_text(size = 11, colour = "grey10"),
+    legend.position = "bottom",
+    legend.box      = "horizontal", 
+    legend.text     = element_text(size = 11, colour = "grey10"),
     plot.background = element_rect(fill = "white", colour = NA)
   )
+
+
+# ggsave(filename = "_results//descriptive_results/plot_data_avail.png", plot = plot_data_avail, width = 12, height = 8, dpi = 300)
 

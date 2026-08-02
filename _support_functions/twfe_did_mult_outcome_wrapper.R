@@ -1,6 +1,9 @@
 # Load packages
+library(purrr)
 library(fixest)
+library(bacondecomp)
 library(did)
+library(DIDmultiplegtDYN)
 library(ggplot2)
 library(gridExtra)
 
@@ -74,3 +77,85 @@ run_csdid_pipeline <- function(data, outcomes, label = "", formula = ~ pop_densi
   return(results)
 }
 
+
+###################### Main dCDH Pipline Estimation Function ######################
+
+run_dcdh_pipeline <- function(data, 
+                              outcomes, 
+                              label = "", 
+                              treatment = "cum_wind_count_3km",
+                              group = "ags",
+                              time = "seq_time",
+                              effects = 3,
+                              placebo = 3,
+                              controls = "pop_density",
+                              trends_nonparam = "east_ger",
+                              cluster = "ags",
+                              normalized = TRUE,
+                              same_switchers = FALSE,
+                              same_switchers_pl = FALSE,
+                              options = list()) {
+  
+  # Helper to resolve scalar vs outcome-specific arguments
+  get_val <- function(param, outcome) {
+    if (!is.null(names(param)) && outcome %in% names(param)) {
+      return(param[[outcome]])
+    }
+    if (is.numeric(param) && length(param) == 1 && is.null(names(param))) {
+      return(param)
+    }
+    if ("default" %in% names(param)) return(param[["default"]])
+    return(param[[1]])
+  }
+  
+  # 1. Run did_multiplegt_dyn across outcomes
+  results <- map(outcomes, function(outcome) {
+    
+    eff_i <- get_val(effects, outcome)
+    plc_i <- get_val(placebo, outcome)
+    
+    message(paste0("Running dCDH DiD for: ", outcome, 
+                   " (effects = ", eff_i, ", placebo = ", plc_i, ")",
+                   ifelse(label != "", paste("|", label), "")))
+    
+    # Define argument list
+    base_args <- list(
+      df                = data,
+      outcome           = outcome,
+      group             = group,
+      time              = time,
+      treatment         = treatment,
+      effects           = eff_i,
+      placebo           = plc_i,
+      controls          = controls,
+      trends_nonparam   = trends_nonparam,
+      cluster           = cluster,
+      normalized        = normalized,
+      same_switchers    = same_switchers,
+      same_switchers_pl = same_switchers_pl,
+      graph_off         = TRUE
+    )
+    
+    args_list <- modifyList(base_args, options)
+    
+    # Execute call
+    res <- do.call(did_multiplegt_dyn, args_list)
+    return(res)
+  }) %>% set_names(outcomes)
+  
+  # 2. Extract and format plots
+  plot_list <- map(outcomes, function(var) {
+    results[[var]]$plot +
+      ggtitle(var) +
+      theme_minimal()
+  })
+  
+  # 3. Render grid layout
+  grid.arrange(
+    grobs = plot_list, 
+    ncol  = min(3, length(outcomes)), 
+    top   = if (label != "") label else NULL
+  )
+  
+  return(results)
+}
