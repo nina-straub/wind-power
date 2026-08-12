@@ -29,12 +29,12 @@ df_east <- df_did_ready %>% filter(east_ger == 1)
 df_west <- df_wo_bav %>% filter(east_ger == 0)
 
 # Early vs. Late Germany (polarisation hypothesis)
-df_early <- df_did_ready %>% filter(election_year < 2015)
-df_late <- df_did_ready %>% filter(election_year > 2015)
+df_early_p <- df_did_ready %>% filter(election_year < 2015)
+df_late_p <- df_did_ready %>% filter(election_year > 2015)
 
 # Early vs. Late Germany (tax hypothesis)
-df_early <- df_did_ready %>% filter(election_year < 2009)
-df_late <- df_did_ready %>% filter(election_year > 2009)
+df_early_t <- df_did_ready %>% filter(election_year <= 2009)
+df_late_t <- df_did_ready %>% filter(election_year > 2009)
 
 # Interaction: Late x West Germany
 df_west_late <- df_wo_bav %>% filter(east_ger == 0, election_year > 2015)
@@ -164,12 +164,12 @@ did_west <- run_csdid_pipeline(df_west, outcome_vars, label = "West Germany", fo
 
 ###################### Early vs. Late Germany ######################
 # Polarisation Hypothesis
-did_early_pol <- run_csdid_pipeline(df_early, outcome_vars_wo_afd, label = "Early (Polarisation)")
-did_late_pol  <- run_csdid_pipeline(df_late, outcome_vars_wo_afd, label = "Late (Polarisation)")
+did_early_pol <- run_csdid_pipeline(df_early_p, outcome_vars_wo_afd, label = "Early (Polarisation)")
+did_late_pol  <- run_csdid_pipeline(df_late_p, outcome_vars_wo_afd, label = "Late (Polarisation)")
 
 # Tax Hypothesis
-did_early_tax <- run_csdid_pipeline(df_early, outcome_vars_wo_afd, label = "Early - Tax Split")
-did_late_tax  <- run_csdid_pipeline(df_late, outcome_vars_wo_afd, label = "Late - Tax Split")
+did_early_tax <- run_csdid_pipeline(df_early_t, outcome_vars_wo_afd, label = "Early - Tax Split")
+did_late_tax  <- run_csdid_pipeline(df_late_t, outcome_vars_wo_afd, label = "Late - Tax Split")
 
 # ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_honest_smooth.png", plot = plot_honest_smooth, width = 12, height = 8, dpi = 300)
 # ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_honest_rm.png", plot = plot_honest_rm, width = 12, height = 8, dpi = 300)

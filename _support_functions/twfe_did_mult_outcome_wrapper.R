@@ -88,12 +88,13 @@ run_dcdh_pipeline <- function(data,
                               time = "seq_time",
                               effects = 3,
                               placebo = 3,
-                              controls = "pop_density",
-                              trends_nonparam = "east_ger",
+                              controls = NULL,
+                              trends_nonparam = NULL,
                               cluster = "ags",
                               normalized = TRUE,
                               same_switchers = FALSE,
                               same_switchers_pl = FALSE,
+                              by = NULL,
                               options = list()) {
   
   # Helper to resolve scalar vs outcome-specific arguments
@@ -133,6 +134,7 @@ run_dcdh_pipeline <- function(data,
       normalized        = normalized,
       same_switchers    = same_switchers,
       same_switchers_pl = same_switchers_pl,
+      by = by,
       graph_off         = TRUE
     )
     
