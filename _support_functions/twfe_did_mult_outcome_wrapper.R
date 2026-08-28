@@ -80,8 +80,8 @@ run_csdid_pipeline <- function(data, outcomes, label = "", formula = ~ pop_densi
 
 ###################### Main dCDH Pipline Estimation Function ######################
 
-run_dcdh_pipeline <- function(data, 
-                              outcomes, 
+run_dcdh_pipeline <- function(df, 
+                              outcome, 
                               label = "", 
                               treatment = "cum_wind_count_3km",
                               group = "ags",
@@ -110,7 +110,7 @@ run_dcdh_pipeline <- function(data,
   }
   
   # 1. Run did_multiplegt_dyn across outcomes
-  results <- map(outcomes, function(outcome) {
+  results <- map(outcome, function(outcome) {
     
     eff_i <- get_val(effects, outcome)
     plc_i <- get_val(placebo, outcome)
@@ -121,7 +121,7 @@ run_dcdh_pipeline <- function(data,
     
     # Define argument list
     base_args <- list(
-      df                = data,
+      df                = df,
       outcome           = outcome,
       group             = group,
       time              = time,
@@ -143,10 +143,10 @@ run_dcdh_pipeline <- function(data,
     # Execute call
     res <- do.call(did_multiplegt_dyn, args_list)
     return(res)
-  }) %>% set_names(outcomes)
+  }) %>% set_names(outcome)
   
   # 2. Extract and format plots
-  plot_list <- map(outcomes, function(var) {
+  plot_list <- map(outcome, function(var) {
     results[[var]]$plot +
       ggtitle(var) +
       theme_minimal()
@@ -155,7 +155,7 @@ run_dcdh_pipeline <- function(data,
   # 3. Render grid layout
   grid.arrange(
     grobs = plot_list, 
-    ncol  = min(3, length(outcomes)), 
+    ncol  = min(3, length(outcome)), 
     top   = if (label != "") label else NULL
   )
   
