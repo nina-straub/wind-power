@@ -31,8 +31,7 @@ df_did_ready <- readRDS("_data/df_did_ready.rds")
 
 
 #### Outcomes ####
-outcome_vars <- c("turnout", "cdu", "csu", "spd", "fdp", 
-                  "linke_pds", "gruene", "afd", "current_incumbent")
+outcome_vars <- c("turnout", "cdu_csu", "spd", "gruene", "afd", "current_incumbent")
 
 
 ###################### TWFE Event Study ######################
@@ -170,33 +169,9 @@ plot_cs_did <- grid.arrange(grobs = plot_list, ncol = 3)
 
 # ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_cs_did.png", plot = plot_cs_did, width = 12, height = 8, dpi = 300)
 
-#### Create cohort-specific plots for one outcome ####
-# Extract ATT(g,t) estimates
-att_turnout <- did_results$gruene$atts
-
-# Build df from att_gt object
-att_df <- data.frame(
-  group = att_turnout$group, time = att_turnout$t, att = att_turnout$att, se = att_turnout$se
-  ) %>%
-  mutate(event_time = time - group, ci_low  = att - 1.96 * se, ci_high = att + 1.96 * se,
-         cohort  = factor(paste("Cohort", group))
-         )
-
-# Plot one panel per cohort, x-axis = event time
-ggplot(att_df, aes(x = event_time, y = att)) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
-  geom_vline(xintercept = -0.5, linetype = "dashed", color = "red", alpha = 0.6) +
-  geom_ribbon(aes(ymin = ci_low, ymax = ci_high), alpha = 0.2, fill = "steelblue") +
-  geom_line(color = "steelblue") +
-  geom_point(color = "steelblue", size = 2) +
-  facet_wrap(~ cohort, scales = "free_x") +
-  labs(title = "ATT(g,t) by Treatment Cohort", subtitle = "Each panel shows one treatment cohort; red line = treatment onset",
-       x = "Event Time (periods relative to treatment)", y = "ATT") +
-  theme_minimal() +
-  theme(strip.text = element_text(face = "bold"))
 
 
-###################### (Conditional) parallel trends for TWFE and staggered adoption ######################
+###################### (Conditional) parallel trends for DiD and staggered adoption ######################
 # Check CS estimates: How strong are violations of pre-trends?
 # Could add interacted linear trends as robustness check in CS-DiD or residualise
 # Report breakdown value M
@@ -219,25 +194,26 @@ honest_smooth_results <- map(outcome_vars, ~run_honest_smoothness(.x, did_result
 # saveRDS(honest_smooth_results, '_results/hyp1_main_analyses/res_honest_smooth.rds')
 
 # Relative Magnitude
-honest_rm_results <- map(outcome_vars, ~run_honest_rm(.x, did_results_uni, mbar_seq = seq(0, 0.5, by = 0.05))) %>% set_names(outcome_vars)
+honest_rm_results <- map(outcome_vars, ~run_honest_rm(.x, did_results_uni, mbar_seq = seq(0, 07., by = 0.07))) %>% set_names(outcome_vars)
 
 # saveRDS(honest_rm_results, '_results/hyp1_main_analyses/res_honest_rm.rds')
 
 
 #### Generate plots ####
 # Smoothness Grid
-plot_honest_smooth <- generate_sensitivity_grid_plot(
+generate_sensitivity_grid_plot(
   outcome_vars = outcome_vars, 
   results_list = honest_smooth_results, 
   type = "smooth", 
-  ncol = 3)
+  ncol = 2)
 
 # Relative Magnitudes Grid
-plot_honest_rm <- generate_sensitivity_grid_plot(
+generate_sensitivity_grid_plot(
   outcome_vars = outcome_vars, 
   results_list = honest_rm_results, 
   type = "rm", 
-  ncol = 3)
+  ncol = 2)
+
 
 # ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_honest_smooth.png", plot = plot_honest_smooth, width = 12, height = 8, dpi = 300)
 # ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_honest_rm.png", plot = plot_honest_rm, width = 12, height = 8, dpi = 300)
@@ -404,70 +380,6 @@ final_grid <- wrap_plots(seq_plots, ncol = 3, nrow = 3) +
 final_grid
 
 # ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_seq_treat.png", plot = final_grid, width = 12, height = 8, dpi = 300)
-
-
-###################### Staggered DiD with Spatial Spillover (Butts, 2021) ######################
-# Let's see if this rabbit hole is worth it to go down
-
-
-###################### Use Counterfactual Estimator ######################
-# Liu et al. (2024)
-
-#### Controls ####
-control_vars <- " ~ treat_absorbing + pop_density"
-
-#### fect estimation function ####
-run_fect_estim <- function(outcome, controls, data) {
-  message(paste("Running fect (non-absorbing) for:", outcome))
-  formula <- as.formula(paste0(outcome, controls))
-  fit <- fect(
-    formula,
-    data    = data,
-    index   = c("ags", "election_year"),
-    method  = "ife",
-    force   = "two-way",
-    se      = TRUE,
-    nboots  = 200,
-    min.T0  = 1
-  )
-  return(fit)
-}
-
-#### Run for all outcomes ####
-res_fect_absorb <- map(outcome_vars, ~run_fect_estim(.x, control_vars, df_did_ready)) %>% set_names(outcome_vars)
-
-# saveRDS(res_fect_absorb, '_results/res_fect_absorb.rds')
-
-#### Plot results ####
-plot_list <- map(outcome_vars, function(var) {plot(fect_abs_results[[var]], main = var)})
-plot_fect_absorb <- grid.arrange(grobs = plot_list, ncol = 3, top = textGrob("FECT Absorbing DiD - All Outcomes"))
-
-# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_fect_absorb.png", plot = plot_fect_absorb, width = 12, height = 8, dpi = 300)
-
-
-
-###################### New Specification of Treatment ######################
-# Treatment is neither absorbing nor non-absorbing, but multiple times with different doses
-# Idea: Investigate this multiple treatment effect through new specification
-# 1.) Estimate effect of first WT in period X
-# 2.) Filter for units treated in period X
-# 3.) Use this sample to estimate effect of new WT in period X+1 (or X+2)
-# ToDo:
-# - How to define treatment? Every unit receiving one turbine or should it be binned, somehow accounting for dose?
-
-#### Controls ####
-control_vars <- " ~ treat_nonabsorbing + pop_density"
-
-#### Run for all outcomes ####
-res_fect_nonabsorb <- map(outcome_vars, ~run_fect_estim(.x, control_vars, df_did_ready)) %>% set_names(outcome_vars)
-
-# saveRDS(res_fect_nonabsorb, '_results/res_fect_nonabsorb.rds')
-
-#### Plot results ####
-plot_list <- map(outcome_vars, function(var) {plot(fect_nonabs_results[[var]], main = var)})
-plot_fect_nonabsorb <- grid.arrange(grobs = plot_list, ncol = 3, top = textGrob("FECT Nonabsorbing DiD - All Outcomes"))
-
-# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_fect_nonabsorb.png", plot = plot_fect_nonabsorb, width = 12, height = 8, dpi = 300)
 
 
 

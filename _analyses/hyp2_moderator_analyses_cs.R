@@ -1,4 +1,4 @@
-###################### Subgroup Analysis of Panel Data ######################
+###################### Hypothesis 2: Costs and Benefits ######################
 
 ###################### Set the scene  ######################
 
@@ -10,17 +10,19 @@ library(ggplot2)
 library(gridExtra)
 library(did)
 
+
+#### Helper functions ####
+source("_support_functions/twfe_did_mult_outcome_wrapper.R")
+
+
 #### Data ####
 df_did_ready <- readRDS("_data/df_did_ready.rds")
 
 
 #### Outcomes & CS Options ####
 
-outcome_vars <- c("turnout", "cdu_csu", "spd", "fdp", 
-                  "linke_pds", "gruene", "far_right", "current_incumbent")
+outcome_vars <- c("turnout", "cdu_csu", "spd", "gruene", "far_right", "current_incumbent")
 
-# Set CS options
-# Set vars for conditional parallel trends with xformla
 att_options_base <- list(
   tname = "seq_time",
   idname = "ags",
@@ -34,31 +36,23 @@ att_options_base <- list(
   biters = 1000
 )
 
-
-###################### Simple Approach: Any changes in MeckPomm post 2016? ######################
-# Filter df and split into early/late df's
-list2env(
-  df_did_ready %>%
-    mutate(ags = str_pad(as.character(ags), width = 8, side = "left", pad = "0")) %>%
-    filter(str_starts(ags, "16")) %>%
-    mutate(ags = as.numeric(ags)) %>%
-    split(.$election_year < 2016) %>%
-    setNames(c("df_meckpomm_late", "df_meckpomm_early")),
-  envir = .GlobalEnv
+att_options_base_2 <- list(
+  tname = "seq_time",
+  idname = "ags",
+  gname = "second_treat_time",
+  panel = TRUE, 
+  allow_unbalanced_panel = TRUE,
+  clustervars = "ags",
+  control_group = "nevertreated",
+  anticipation = 0,
+  bstrap = TRUE,
+  biters = 1000
 )
-
-# Estimation
-did_mp_early <- run_csdid_pipeline(df_meckpomm_early, outcome_vars, label = "MeckPomm Early", formula = ~ pop_density)
-did_mp_late <- run_csdid_pipeline(df_meckpomm_late, outcome_vars, label = "MeckPomm Late", formula = ~ pop_density)
-
-# Okay, no effects
-# --> But honestly, in the East there were no effects in the first place, so what to expect?
-
 
 
 ###################### Compare high vs. low benefit units' reactions to later treatment ######################
 
-# Construct data
+#### Construct data ####
 # Identify treated units and winners/losers during first treatment (by inc_tax)
 indic_cb <- df_did_ready %>%
   filter(seq_group > 0, seq_time >= seq_group - 1, seq_time <= seq_group + 1) %>%
@@ -79,53 +73,47 @@ indic_cb <- df_did_ready %>%
   )
 
 df_cb <- df_did_ready %>%
-  inner_join(
+  left_join(
     indic_cb %>% select(ags, economic_benefit, shock_type, shock_type_4way), by = "ags") %>%
   group_by(ags) %>%
-  filter(sum(treat_nonabsorbing) > 1) %>%
   arrange(seq_time, .by_group = TRUE) %>% # Ensure strict chronological order
   mutate(
     # Get the time period for the first and second treatments
-    # since sum(treat_nonabsorbing) > 1, these positions are guaranteed to exist
-    first_treat_time = seq_time[treat_nonabsorbing == 1][1],
-    second_treat_time = seq_time[treat_nonabsorbing == 1][2],
+    n_treats = sum(treat_nonabsorbing, na.rm = TRUE),
+    first_treat_time = if_else(n_treats >= 1, seq_time[treat_nonabsorbing == 1][1], NA_real_),
+    # Set second_treat_time = 0 for units with 0 treatments (did package convention)
+    second_treat_time = if_else(n_treats >= 2, seq_time[treat_nonabsorbing == 1][2], 0),
     # Calculate the gap. consecutive periods (e.g., 2015 and 2016) = 1.
     # We need a gap >= 2 (e.g., 2015 and 2017, leaving 2016 as a '0' break).
-    treatment_gap = second_treat_time - first_treat_time,
-    seq_group_2 = second_treat_time
+    treatment_gap = if_else(n_treats >= 2, second_treat_time - first_treat_time, NA_real_)
   ) %>%
-  # Keep only municipalities with at least one period break and drop all periods before and including first treatment
-  filter(treatment_gap > 1, seq_time > first_treat_time) %>%
-  # Drop helper columns
-  #select(-first_treat_time, -second_treat_time, -treatment_gap) %>%
+  # Retain:
+  # 1. Multi-treated units (n_treats >= 2) after their first treatment with gap > 1
+  # 2. Truly never-treated units (n_treats == 0)
+  # Exclude: Single-treated units (n_treats == 1)
+  filter(
+    (n_treats >= 2 & treatment_gap > 1 & seq_time > first_treat_time) |
+      (n_treats == 0)
+  ) %>%
   ungroup()
 
-df_cb_los  <- df_cb %>% filter(shock_type == "loser")
-df_cb_win <- df_cb %>% filter(shock_type == "winner")
+# Extract pure controls (units never receiving any treatment)
+never_treated_pool <- df_cb %>% filter(n_treats == 0)
 
-df_cb_blos <- df_cb %>% filter(shock_type_4way == "big_loser")
-df_cb_bwin <- df_cb %>% filter(shock_type_4way == "big_winner")
+# Build subgroup datasets: Multi-treated units split by 1st treatment shock type + pure controls
+df_cb_los  <- bind_rows(df_cb %>% filter(shock_type == "loser"), never_treated_pool) %>% distinct()
+df_cb_win  <- bind_rows(df_cb %>% filter(shock_type == "winner"), never_treated_pool) %>% distinct()
+df_cb_blos <- bind_rows(df_cb %>% filter(shock_type_4way == "big_loser"), never_treated_pool) %>% distinct()
+df_cb_bwin <- bind_rows(df_cb %>% filter(shock_type_4way == "big_winner"), never_treated_pool) %>% distinct()
 
 
-# Set CS-DiD Options
-att_options_base_2 <- list(
-  tname = "seq_time",
-  idname = "ags",
-  gname = "second_treat_time",
-  panel = FALSE, 
-  allow_unbalanced_panel = TRUE,
-  clustervars = "ags",
-  control_group = "notyettreated",
-  anticipation = 0,
-  bstrap = TRUE,
-  biters = 1000
-)
 
-# Estimation
+
+#### Estimation ####
 did_los <- run_csdid_pipeline(df_cb_los, outcome_vars, options = att_options_base_2, 
-                              label = "Loser", gname = "second_treat_time", formula = ~ pop_density)
+                              label = "Loser", gname = "second_treat_time", formula = ~ 1)
 did_win <- run_csdid_pipeline(df_cb_win, outcome_vars, options = att_options_base_2,
-                              label = "Winner", gname = "second_treat_time", formula = ~ pop_density)
+                              label = "Winner", gname = "second_treat_time", formula = ~ 1)
 
 did_blos <- run_csdid_pipeline(df_cb_blos, outcome_vars, options = att_options_base_2,
                                label = "Big Loser", gname = "second_treat_time", formula = ~ pop_density)
@@ -134,9 +122,71 @@ did_bwin <- run_csdid_pipeline(df_cb_bwin, outcome_vars, options = att_options_b
 
 
 
+#### Extract Loser estimates from did_los pipeline output ####
+df_cs_los <- map_dfr(outcome_vars, function(var) {
+  es <- did_los[[var]]$es
+  crit_val <- es$crit.val.egt
+  
+  data.frame(
+    outcome   = var,
+    e         = es$egt,
+    estimate  = es$att.egt,
+    se        = es$se.egt,
+    estimator = "Loser"
+  ) %>%
+    mutate(
+      conf.low  = estimate - crit_val * se,
+      conf.high = estimate + crit_val * se
+    )
+})
+
+# Extract Winner estimates from did_win pipeline output
+df_cs_win <- map_dfr(outcome_vars, function(var) {
+  es <- did_win[[var]]$es
+  crit_val <- es$crit.val.egt
+  
+  data.frame(
+    outcome   = var,
+    e         = es$egt,
+    estimate  = es$att.egt,
+    se        = es$se.egt,
+    estimator = "Winner"
+  ) %>%
+    mutate(
+      conf.low  = estimate - crit_val * se,
+      conf.high = estimate + crit_val * se
+    )
+})
+
+#### Combine into a df for plotting ####
+df_all <- bind_rows(df_cs_win, df_cs_los)
+
+create_overlay_plot(df_all)
+
+
 ###################### Construct index ######################
 
+# Omitted
 
+
+###################### Simple Approach: Any changes in MeckPomm post 2016? ######################
+# Filter df and split into early/late df's
+list2env(
+  df_did_ready %>%
+    mutate(ags = str_pad(as.character(ags), width = 8, side = "left", pad = "0")) %>%
+    filter(str_starts(ags, "16")) %>%
+    mutate(ags = as.numeric(ags)) %>%
+    split(.$election_year < 2016) %>%
+    setNames(c("df_meckpomm_late", "df_meckpomm_early")),
+  envir = .GlobalEnv
+)
+
+# Estimation
+did_mp_early <- run_csdid_pipeline(df_meckpomm_early, outcome_vars, label = "MeckPomm Early", formula = ~ pop_density)
+did_mp_late <- run_csdid_pipeline(df_meckpomm_late, outcome_vars, label = "MeckPomm Late", formula = ~ pop_density)
+
+# Okay, no effects
+# --> But honestly, in the East there were no effects in the first place, so what to expect?
 
 
 

@@ -38,10 +38,9 @@ df_did_ready <- df_did_ready %>%
   )
 
 
-#### Outcomes and Controls ####
+#### Outcomes ####
 
-outcome_vars <- c("turnout", "cdu_csu", "spd", "fdp", 
-                  "linke_pds", "gruene", "afd", "current_incumbent")
+outcome_vars <- c("turnout", "cdu_csu", "spd", "gruene", "afd", "current_incumbent")
 
 
 
@@ -105,5 +104,68 @@ res_dcdh_3 <- run_dcdh_pipeline(
 # Investigate further:
 # Normalised weights
 # Treatment paths
+
+
+
+###################### Can we fix PTA?  ######################
+
+#### dCDH Controlled ####
+dcdh_results_list_fix <- map(outcome_vars, function(var) {
+  message(paste("Running dCDH for:", var))
+  
+  # Dynamic placebo/effects window: 3 for 'afd', standard for others
+  plc_val <- if (var == "afd") 1 else 4
+  eff_val <- if (var == "afd") 3 else 5
+  
+  res_dcdh <- did_multiplegt_dyn(
+    df            = df_did_ready,
+    outcome        = var,
+    treatment       = "cum_wind_count_3km",
+    group           = "ags",
+    time            = "seq_time",
+    effects         = eff_val,
+    placebo         = plc_val,
+    controls        = "pop_density",
+    trends_nonparam = "bundesland",
+    cluster         = "ags",
+    normalized      = T,
+    only_never_switchers = F,
+    same_switchers = T,
+    same_switchers_pl = F,
+    graph_off = T
+  )
+  
+  extract_dcdh_results(res_dcdh, var)
+}) %>% set_names(outcome_vars)
+
+# Combine into a single dCDH data frame
+df_dcdh_all <- bind_rows(dcdh_results_list_fix)
+
+# Create Plot
+create_overlay_plot(df_dcdh_all)
+
+
+###################### Analyse Normalised Weights  ######################
+
+# Example for a single outcome (e.g., 'afd')
+res_dcdh_afd <- did_multiplegt_dyn(
+  df                   = df_did_ready,
+  outcome              = "cdu_csu",
+  treatment            = "cum_wind_count_3km",
+  group                = "ags",
+  time                 = "seq_time",
+  effects              = 5,
+  placebo              = 4,
+  controls             = "pop_density",
+  by                   = "east_ger",
+  cluster              = "ags",
+  normalized           = TRUE,
+  normalized_weights   = TRUE,
+  design               = list(0.05, "console"),
+  graph_off            = F
+)
+
+summary(res_dcdh_afd)
+
 
 
