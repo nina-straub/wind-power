@@ -47,7 +47,7 @@ outcome_vars <- c("turnout", "cdu_csu", "spd", "gruene", "afd", "current_incumbe
 ###################### Hyp 1 ######################
 
 # Option 1: Most simple setup, no controls
-res_dcdh_1 <- run_dcdh_pipeline(
+res_dcdh_1 <- run_dcdh_pipeline_2(
   df            = df_did_ready,
   outcome        = outcome_vars,
   label           = "Model 1 (Baseline)",
@@ -65,7 +65,7 @@ summary(res_dcdh_1[["gruene"]])
 
 
 # Option 2: Controls as in CS DiD
-res_dcdh_2 <- run_dcdh_pipeline(
+res_dcdh_2 <- run_dcdh_pipeline_2(
   df            = df_did_ready,
   outcome        = outcome_vars,
   label           = "Model 2 (With Controls)",
@@ -83,7 +83,7 @@ res_dcdh_2 <- run_dcdh_pipeline(
 
 
 # Option 3: Only units with same trajectory
-res_dcdh_3 <- run_dcdh_pipeline(
+res_dcdh_3 <- run_dcdh_pipeline_2(
   df            = df_did_ready,
   outcome        = outcome_vars,
   label           = "Model 3 (Only Complete Observations)",

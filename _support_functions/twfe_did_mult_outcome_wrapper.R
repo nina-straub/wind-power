@@ -64,7 +64,7 @@ run_csdid_pipeline <- function(data, outcomes, label = "", formula = ~ pop_densi
     # Merge core arguments with base list options
     args_list <- c(list(yname = outcome, data = data, xformla = formula), options)
     atts <- do.call(att_gt, args_list)
-    es   <- aggte(atts, type = "dynamic", na.rm = TRUE)
+    es   <- aggte(atts, type = "dynamic", na.rm = TRUE, min_e = -4, max_e = 5)
     
     return(list(atts = atts, es = es))
   }) %>% set_names(outcomes)
@@ -83,10 +83,31 @@ run_csdid_pipeline <- function(data, outcomes, label = "", formula = ~ pop_densi
 }
 
 
+###################### Extraction of CS Results for Plotting ######################
+
+extract_cs_df <- function(did_result, label) {
+  map_dfr(names(did_result), function(var) {
+    es <- did_result[[var]]$es
+    crit_val <- es$crit.val.egt
+    
+    data.frame(
+      outcome   = var,
+      e         = es$egt,
+      estimate  = es$att.egt,
+      se        = es$se.egt,
+      estimator = label
+    ) %>%
+      mutate(
+        conf.low  = estimate - (crit_val * se),
+        conf.high = estimate + (crit_val * se)
+      )
+  })
+}
+
 
 ###################### Main dCDH Pipline Estimation Function ######################
 
-run_dcdh_pipeline <- function(df, 
+run_dcdh_pipeline_2 <- function(df, 
                               outcome, 
                               label = "", 
                               treatment = "cum_wind_count_3km",
@@ -169,10 +190,46 @@ run_dcdh_pipeline <- function(df,
 }
 
 
+# Main dCDH Pipeline Function
+run_dcdh_pipeline <- function(
+    data, 
+    outcomes, 
+    label = "", 
+    options = dcdh_options_base,
+    effects_default = 6,
+    placebo_default = 3,
+    effects_afd = 3,
+    placebo_afd = 1
+) {
+  map(outcomes, function(var) {
+    message(paste("Running dCDH for:", var, ifelse(label != "", paste("|", label), "")))
+    
+    # Dynamic window override
+    plc_val <- if (var == "afd") placebo_afd else placebo_default
+    eff_val <- if (var == "afd") effects_afd else effects_default
+    
+    # Build argument list
+    args_list <- c(
+      list(
+        df = data,
+        outcome = var,
+        effects = eff_val,
+        placebo = plc_val
+      ),
+      options
+    )
+    
+    res_dcdh <- do.call(did_multiplegt_dyn, args_list)
+    
+    extract_dcdh_results(res_dcdh, var, label)
+  }) %>% set_names(outcomes)
+}
+
+
 
 ###################### Extraction function to apply index shift for dCDH (e = x - 1) ######################
 
-extract_dcdh_results <- function(dcdh_res, var_name) {
+extract_dcdh_results <- function(dcdh_res, var_name, label) {
   # 1.) Placebos (x = -1, -2, ...)
   p_df <- if (!is.null(dcdh_res$results$Placebos)) {
     p_mat <- dcdh_res$results$Placebos
@@ -201,7 +258,7 @@ extract_dcdh_results <- function(dcdh_res, var_name) {
     mutate(
       e         = x - 1, # Maps x = 0 (baseline) to e = -1, matching CS timeline
       outcome   = var_name,
-      estimator = "dCDH (did_multiplegt_dyn)",
+      estimator = label,
       conf.low  = estimate - 1.96 * se,
       conf.high = estimate + 1.96 * se
     ) %>%
@@ -224,9 +281,18 @@ create_overlay_plot <- function(
       "current_incumbent" = "Current Incumbent",
       "far_right"         = "Far Right"
     ),
-    est_cols   = c("CS (did)" = "#2b5c8f", "dCDH (did_multiplegt_dyn)" = "#fd7107", "Winner" = "#2b5c8f", "Loser" = "#fd7107"),
-    est_shapes = c("CS (did)" = 16,        "dCDH (did_multiplegt_dyn)" = 17, "Winner" = 16, "Loser" = 17),
-    est_lines  = c("CS (did)" = "solid",   "dCDH (did_multiplegt_dyn)" = "solid", "Winner" = "solid", "Loser" = "solid"),
+    est_cols   = c("CS (did)" = "#2b5c8f", "dCDH (did_multiplegt_dyn)" = "#fd7107",
+                   "Winner" = "#2b5c8f", "Loser" = "#fd7107",
+                   "East" = "#2b5c8f", "West" = "#fd7107",
+                   "Early" = "#2b5c8f", "Late" = "#fd7107"),
+    est_shapes = c("CS (did)" = 16,        "dCDH (did_multiplegt_dyn)" = 17,
+                   "Winner" = 16, "Loser" = 17,
+                   "East" = 16, "West" = 17,
+                   "Early" = 16, "Late" = 17),
+    est_lines  = c("CS (did)" = "solid",   "dCDH (did_multiplegt_dyn)" = "solid",
+                   "Winner" = "solid", "Loser" = "solid",
+                   "East" = "solid", "West" = "solid",
+                   "Early" = "solid", "Late" = "solid"),
     ncol = 2
 ) {
   # Build subplots
