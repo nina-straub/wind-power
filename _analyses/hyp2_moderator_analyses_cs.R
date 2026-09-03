@@ -121,7 +121,6 @@ did_bwin <- run_csdid_pipeline(df_cb_bwin, outcome_vars, options = att_options_b
                                label = "Big Winner", gname = "second_treat_time", formula = ~ pop_density)
 
 
-
 #### Extract Loser estimates from did_los pipeline output ####
 df_cs_los <- map_dfr(outcome_vars, function(var) {
   es <- did_los[[var]]$es

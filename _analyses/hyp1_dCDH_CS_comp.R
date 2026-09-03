@@ -1,8 +1,4 @@
-###################### Compare CS and dCDH from scratch ######################
-
-# Step 1: Naive implementation of CS and dCDH
-# Step 2: Create equivalence case described by dCDH (2025) as sanity check
-# Step 3: Built up complexity
+###################### Compare CS/dCDH and Test Hypothesis 1 ######################
 
 ###################### Set the scene  ######################
 
@@ -22,25 +18,20 @@ library(polars)
 #### Helper functions ####
 source("_support_functions/twfe_did_mult_outcome_wrapper.R")
 
-
 #### Data ####
 df_did_ready <- readRDS("_data/df_did_ready.rds")
 
-
-###################### Step 1: Naive implementation of both  ######################
-
 #### Outcomes ####
-
 outcome_vars <- c("turnout", "cdu_csu", "spd", "gruene", "afd", "current_incumbent")
 
 
-#### CS Naive Implementation ####
+###################### Step 1: Naive implementation & testing hypothesis 1 ######################
+
+#### CS & dCDH Options ####
 att_options_naive <- list(
-  data = df_did_ready,
   tname = "seq_time",
   idname = "ags",
   gname = "seq_group",
-  xformla = ~ east_ger + pop_density,
   panel = TRUE, 
   allow_unbalanced_panel = TRUE,
   clustervars = "ags",
@@ -51,81 +42,57 @@ att_options_naive <- list(
   biters = 1000
 )
 
-cs_results_list_naive <- map(outcome_vars, function(var) {
-  message(paste("Running CS-DiD for:", var))
-  
-  atts <- do.call(att_gt, c(list(yname = var), att_options_naive))
-  es   <- aggte(atts, type = "dynamic", na.rm = TRUE, min_e = -5, max_e = 4)
-  
-  # Extract uniform critical value directly
-  crit_val <- es$crit.val.egt
-  
-  data.frame(
-    outcome   = var,
-    e         = es$egt,
-    estimate  = es$att.egt,
-    se        = es$se.egt,
-    estimator = "CS (did)"
-  ) %>%
-    mutate(
-      conf.low  = estimate - crit_val * se,
-      conf.high = estimate + crit_val * se
-    )
-}) %>% set_names(outcome_vars)
+dcdh_options_naive <- list(
+  treatment = "cum_wind_count_3km",
+  group = "ags",
+  time = "seq_time",
+  controls = "pop_density",
+  trends_nonparam = "east_ger",
+  cluster = "ags",
+  normalized = TRUE,
+  only_never_switchers = FALSE,
+  same_switchers = FALSE,
+  same_switchers_pl = FALSE,
+  graph_off = TRUE
+)
 
-df_cs_all <- bind_rows(cs_results_list_naive)
+#### CS & dCDH Naive Pipeline Execution ####
+did_cs_naive   <- run_csdid_pipeline(df_did_ready, outcome_vars, label = "CS (did)", formula = ~ east_ger + pop_density, options = att_options_naive)
+df_cs_naive    <- extract_cs_df(did_cs_naive, "CS (did)")
 
-
-#### dCDH Naive Implementation ####
-dcdh_results_list_naive <- map(outcome_vars, function(var) {
-  message(paste("Running dCDH for:", var))
-  
-  # Dynamic placebo/effects window: 3 for 'afd', standard for others
-  plc_val <- if (var == "afd") 1 else 4
-  eff_val <- if (var == "afd") 3 else 5
-  
-  res_dcdh <- did_multiplegt_dyn(
-    df            = df_did_ready,
-    outcome        = var,
-    treatment       = "cum_wind_count_3km",
-    group           = "ags",
-    time            = "seq_time",
-    effects         = eff_val,
-    placebo         = plc_val,
-    controls        = "pop_density",
-    trends_nonparam = "east_ger",
-    cluster         = "ags",
-    normalized      = T,
-    only_never_switchers = F,
-    same_switchers = F,
-    same_switchers_pl = F,
-    graph_off = T
-  )
-  
-  extract_dcdh_results(res_dcdh, var)
-}) %>% set_names(outcome_vars)
-
-# Combine into a single dCDH data frame
-df_dcdh_all <- bind_rows(dcdh_results_list_naive)
-
+did_dcdh_naive <- run_dcdh_pipeline(df_did_ready, outcome_vars, label = "dCDH (did_multiplegt_dyn)", options = dcdh_options_naive, effects_default = 6, placebo_default = 3, effects_afd = 3, placebo_afd = 1)
+df_dcdh_naive  <- bind_rows(did_dcdh_naive)
 
 #### Overlay Comparison Plots ####
+df_all_naive <- bind_rows(df_cs_naive, df_dcdh_naive)
 
-# Combine CS and dCDH outputs
-df_all_estimators <- bind_rows(df_cs_all, df_dcdh_all)
-
-# Create Plot
-create_overlay_plot(df_all_estimators)
-
-# Create Plot for nAVSQ only
-create_overlay_plot(df_dcdh_all)
+create_overlay_plot(df_all_naive)
+create_overlay_plot(df_dcdh_naive)
 
 
-###################### Step 2: Create baseline  ######################
+###################### Analyse normalised weights of dCDH ######################
 
-#### Outcomes and Controls ####
+res_dcdh_weights <- did_multiplegt_dyn(
+  df                   = df_did_ready,
+  outcome              = "cdu_csu",
+  treatment            = "cum_wind_count_3km",
+  group                = "ags",
+  time                 = "seq_time",
+  effects              = 5,
+  placebo              = 4,
+  controls             = "pop_density",
+  trends_nonparam      = "east_ger",
+  cluster              = "ags",
+  normalized           = TRUE,
+  normalized_weights   = TRUE,
+  design               = list(0.05, "console"),
+  graph_off            = F
+)
 
-outcome_vars <- c("turnout", "cdu_csu", "spd", "gruene", "afd", "current_incumbent")
+summary(res_dcdh_weights)
+
+
+###################### Step 2: Show dCDH/CS equivalence by creating baseline  ######################
 
 #### CS DiD baseline ####
 att_options_base <- list(
@@ -188,9 +155,7 @@ cs_results_list_baseline <- map(outcome_vars, function(var) {
 df_cs_all <- bind_rows(cs_results_list_baseline)
 
 
-
 #### dCDH baseline ####
-
 
 # Run dCDH across all outcome variables
 dcdh_results_list_baseline <- map(outcome_vars, function(var) {
@@ -216,7 +181,7 @@ dcdh_results_list_baseline <- map(outcome_vars, function(var) {
     graph_off = T
   )
   
-  extract_dcdh_results(res_dcdh, var)
+  extract_dcdh_results(res_dcdh, var, "dCDH (did_multiplegt_dyn)")
 }) %>% set_names(outcome_vars)
 
 # Combine into a single dCDH data frame

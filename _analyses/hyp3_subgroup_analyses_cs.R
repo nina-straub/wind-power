@@ -1,4 +1,4 @@
-###################### Subgroup Analysis of Panel Data ######################
+###################### Hypothesis 3: Subgroup Analysis ######################
 
 ###################### Set the scene  ######################
 
@@ -9,6 +9,7 @@ library(stringr)
 library(ggplot2)
 library(gridExtra)
 library(did)
+library(DIDmultiplegtDYN)
 
 
 #### Helper functions ####
@@ -124,7 +125,6 @@ create_overlay_plot(df_all_region_dcdh)
 
 
 ###################### Early vs. Late Germany (Polarisation Hypothesis) - CS Estimator ######################
-
 did_cs_early <- run_csdid_pipeline(df_early, outcome_vars_wo_afd, label = "Early", formula = ~ pop_density + east_ger)
 did_cs_late  <- run_csdid_pipeline(df_late, outcome_vars_wo_afd, label = "Late", formula = ~ pop_density + east_ger)
 
@@ -138,7 +138,6 @@ create_overlay_plot(df_all_time_cs)
 
 
 ###################### Early vs. Late Germany (Polarisation Hypothesis) - dCDH Estimator ######################
-
 did_dcdh_early <- run_dcdh_pipeline(df_early, outcome_vars_wo_afd, label = "Early",
                                     effects_default = 3,
                                     placebo_default = 1)
@@ -170,16 +169,18 @@ df_treat_once %>%
   count(total_treat)
 
 # Estimation loop
-did_cs_treat_once <- run_csdid_pipeline(df_treat_once, outcome_vars, label = "One-time Treatment")
+did_cs_once <- run_csdid_pipeline(df_treat_once, outcome_vars, label = "One-time Treatment")
+
+df_cs_once <- extract_cs_df(did_cs_once, "Treated Once")
+create_overlay_plot(df_cs_once)
 
 
 ###################### Units treated once - dCDH Estimator ######################
-did_dcdh_treat_once <- run_dcdh_pipeline(df_treat_once, outcome_vars, label = "Early",
+did_dcdh_once <- run_dcdh_pipeline(df_treat_once, outcome_vars, label = "Treated Once",
                                     effects_default = 4,
                                     placebo_default = 3)
 
-df_all_once_dcdh <- bind_rows(did_dcdh_treat_once)
-
-create_overlay_plot(df_all_once_dcdh)
+df_once_dcdh <- bind_rows(did_dcdh_once)
+create_overlay_plot(df_once_dcdh)
 
 

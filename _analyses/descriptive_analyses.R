@@ -12,10 +12,12 @@ library(ggplot2)
 library(gridExtra)
 library(patchwork)
 
+
 #### Data ####
 
 df_panel_cov <- readRDS('_data/df_panel_cov.rds')
 df_did_ready <- readRDS('_data/df_did_ready.rds')
+
 
 ###################### Technical Check: Treatment Variables ######################
 
@@ -116,7 +118,6 @@ final_ps_plot
 
 
 ###################### Wind Power over the Years ######################
-# Plot coded with help of claude.ai
 
 df_wp <- df_panel_cov %>%
   mutate(east_ger = ifelse(substr(ags, 1, 2) %in% c("12", "13", "14", "15", "16"), 1, 0)) %>%
@@ -175,9 +176,7 @@ plot_wt_dev <- (p1 + p2) +
 # ggsave(filename = "_results//descriptive_results/plot_wt_dev.png", plot = plot_wt_dev, width = 15, height = 8, dpi = 300)
 
 
-
 ###################### Election Outcomes over the Years ######################
-# Plot coded with help of claude.ai
 
 party_colors <- c(
   cdu_csu   = "#2C2C2C",
@@ -209,7 +208,6 @@ df_panel_cov %>%
 
 
 ###################### Spatial distribution Wind Power in Germany ######################
-# Plot coded with help of claude.ai
 
 shapefile_path <- '_data/_shapefiles/VG250_GEM.shp'
 municipalities <- st_read(shapefile_path) %>%
@@ -278,7 +276,6 @@ ggsave(filename = "_results//descriptive_results/plot_wt_dist.png", plot = plot_
 
 
 ###################### Availability of Covariates across periods ######################
-# Plot coded with help of claude.ai
 
 years <- c(1990, 1994, 1998, 2002, 2005, 2009, 2013, 2017, 2021, 2025)
 
@@ -332,14 +329,14 @@ group_colors <- c(
 plot_data_avail <- ggplot(df_plot, aes(x = factor(year), y = variable)) +
   geom_tile(aes(fill = group, alpha = available), colour = "white", linewidth = 0.4) +
   
-  # Replaced geom_text layers with a single geom_point layer mapping shapes
+  # Replace geom_text layers with a single geom_point layer mapping shapes
   geom_point(data = filter(df_plot, !is.na(status)),
              aes(shape = status), colour = "white", size = 5.5) +
   
   scale_fill_manual(values = group_colors, name = NULL) +
   scale_alpha_manual(values = c("TRUE" = 0.8, "FALSE" = 0.07), guide = "none") +
   
-  # FIX: Added override.aes to make the legend text/shapes visible (grey30)
+  # Add override.aes to make the legend text/shapes visible
   scale_shape_manual(
     values = c("available" = "o", "imputed" = "~"), 
     name = NULL,
@@ -358,6 +355,89 @@ plot_data_avail <- ggplot(df_plot, aes(x = factor(year), y = variable)) +
     plot.background = element_rect(fill = "white", colour = NA)
   )
 
-
 # ggsave(filename = "_results//descriptive_results/plot_data_avail.png", plot = plot_data_avail, width = 12, height = 8, dpi = 300)
+
+
+###################### Theory Plot ######################
+
+# --- Generate data ---
+x <- seq(0, 12, length.out = 800)
+
+# --- OPTIMIZED PARAMETERS ---
+main_amp <- 0.15
+main_center <- 4.5
+left_width <- 1.4   # steeper drop before dip
+right_width <- 2.2  # slower recovery after dip
+
+y_main <- ifelse(
+  x < main_center,
+  0.5 - main_amp * exp(-((x - main_center)^2) / left_width),
+  0.5 - main_amp * exp(-((x - main_center)^2) / right_width)
+)
+
+# Green curve (Benefits > Costs)
+green_amp <- 0.07
+green_width <- 2
+green_center <- 4.5
+green_exp_amp <- 0.15
+green_exp_rate <- 0.3
+y_green_shape <- 0.5 - green_amp * exp(-((x - green_center)^2) / green_width)
+y_green <- y_green_shape + ifelse(x >= green_center, green_exp_amp * (1 - exp(-green_exp_rate * (x - green_center))), 0)
+y_green[x < 2.2] <- NA
+
+# Red curve (Costs > Benefits)
+red_amp <- 0.17
+red_exp_rate <- 0.25
+dip_index <- which.min(y_main)
+dip_x <- x[dip_index]
+y_red <- ifelse(x >= dip_x,
+                y_main - red_amp * (1 - exp(-red_exp_rate * (x - dip_x))),
+                NA)
+
+# --- Combine into data frame ---
+df <- data.frame(x, y_main, y_green, y_red)
+
+# --- Plot Parameters ---
+y_offset <- 0.03
+x_line1 <- 3.8
+x_line2 <- 6.6
+
+# --- Plot ---
+ggplot(df, aes(x = x)) +
+  geom_line(aes(y = y_main + y_offset), color = "black", linewidth = 1.3) +
+  geom_line(aes(y = y_green + y_offset, color = "Benefits > Costs", linetype = "Benefits > Costs"), linewidth = 1.1) +
+  geom_line(aes(y = y_red + y_offset, color = "Costs > Benefits", linetype = "Costs > Benefits"), linewidth = 1.1) +
+  
+  # Dotted line 1: Construction finishes
+  geom_vline(xintercept = x_line1, linetype = "dotted", color = "gray30", linewidth = 1) +
+  annotate("text", x = x_line1, y = 0.72 + y_offset, label = "Construction", angle = 90, vjust = -0.5, size = 7) +
+  
+  # Dotted line 2: Habituation
+  geom_vline(xintercept = x_line2, linetype = "dotted", color = "gray30", linewidth = 1) +
+  annotate("text", x = x_line2, y = 0.72 + y_offset, label = "Habituation", angle = 90, vjust = -0.5, size = 7) +
+  
+  scale_color_manual(
+    name = NULL,
+    values = c("Benefits > Costs" = "darkgreen", "Costs > Benefits" = "red")
+  ) +
+  scale_linetype_manual(
+    name = NULL,
+    values = c("Benefits > Costs" = "dashed", "Costs > Benefits" = "dashed")
+  ) +
+  labs(x = "Time", y = "Level of Acceptance") +
+  coord_cartesian(ylim = c(0.1, 1)) +
+  theme_minimal(base_size = 20) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_text(face = "bold", size = 23),
+    panel.background = element_blank(),
+    axis.line = element_line(color = "black"),
+    legend.position = c(0.98, 0.98),
+    legend.justification = c("right", "top"),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key.size = unit(1.0, "cm"),
+    legend.text = element_text(size = 18)
+  )
 

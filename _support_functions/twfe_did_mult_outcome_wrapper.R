@@ -1,8 +1,11 @@
 # Load packages
 library(purrr)
+library(dplyr)
+library(stringr)
 library(fixest)
 library(bacondecomp)
 library(did)
+library(polars)
 library(DIDmultiplegtDYN)
 library(ggplot2)
 library(gridExtra)
@@ -107,90 +110,6 @@ extract_cs_df <- function(did_result, label) {
 
 ###################### Main dCDH Pipline Estimation Function ######################
 
-run_dcdh_pipeline_2 <- function(df, 
-                              outcome, 
-                              label = "", 
-                              treatment = "cum_wind_count_3km",
-                              group = "ags",
-                              time = "seq_time",
-                              effects = 3,
-                              placebo = 3,
-                              controls = NULL,
-                              trends_nonparam = NULL,
-                              cluster = "ags",
-                              normalized = TRUE,
-                              same_switchers = FALSE,
-                              same_switchers_pl = FALSE,
-                              by = NULL,
-                              options = list()) {
-  
-  # Helper to resolve scalar vs outcome-specific arguments
-  get_val <- function(param, outcome) {
-    if (!is.null(names(param)) && outcome %in% names(param)) {
-      return(param[[outcome]])
-    }
-    if (is.numeric(param) && length(param) == 1 && is.null(names(param))) {
-      return(param)
-    }
-    if ("default" %in% names(param)) return(param[["default"]])
-    return(param[[1]])
-  }
-  
-  # 1. Run did_multiplegt_dyn across outcomes
-  results <- map(outcome, function(outcome) {
-    
-    eff_i <- get_val(effects, outcome)
-    plc_i <- get_val(placebo, outcome)
-    
-    message(paste0("Running dCDH DiD for: ", outcome, 
-                   " (effects = ", eff_i, ", placebo = ", plc_i, ")",
-                   ifelse(label != "", paste("|", label), "")))
-    
-    # Define argument list
-    base_args <- list(
-      df                = df,
-      outcome           = outcome,
-      group             = group,
-      time              = time,
-      treatment         = treatment,
-      effects           = eff_i,
-      placebo           = plc_i,
-      controls          = controls,
-      trends_nonparam   = trends_nonparam,
-      cluster           = cluster,
-      normalized        = normalized,
-      same_switchers    = same_switchers,
-      same_switchers_pl = same_switchers_pl,
-      by = by,
-      graph_off         = TRUE
-    )
-    
-    args_list <- modifyList(base_args, options)
-    
-    # Execute call
-    res <- do.call(did_multiplegt_dyn, args_list)
-    return(res)
-  }) %>% set_names(outcome)
-  
-  # 2. Extract and format plots
-  plot_list <- map(outcome, function(var) {
-    results[[var]]$plot +
-      ggtitle(var) +
-      theme_minimal()
-  })
-  
-  # 3. Render grid layout
-  grid.arrange(
-    grobs = plot_list, 
-    ncol  = min(3, length(outcome)), 
-    top   = if (label != "") label else NULL
-  )
-  
-  return(results)
-}
-
-
-# Main dCDH Pipeline Function
 run_dcdh_pipeline <- function(
     data, 
     outcomes, 
@@ -284,15 +203,18 @@ create_overlay_plot <- function(
     est_cols   = c("CS (did)" = "#2b5c8f", "dCDH (did_multiplegt_dyn)" = "#fd7107",
                    "Winner" = "#2b5c8f", "Loser" = "#fd7107",
                    "East" = "#2b5c8f", "West" = "#fd7107",
-                   "Early" = "#2b5c8f", "Late" = "#fd7107"),
+                   "Early" = "#2b5c8f", "Late" = "#fd7107",
+                   "Treated Once" = "#2b5c8f"),
     est_shapes = c("CS (did)" = 16,        "dCDH (did_multiplegt_dyn)" = 17,
                    "Winner" = 16, "Loser" = 17,
                    "East" = 16, "West" = 17,
-                   "Early" = 16, "Late" = 17),
+                   "Early" = 16, "Late" = 17,
+                   "Treated Once" = 16),
     est_lines  = c("CS (did)" = "solid",   "dCDH (did_multiplegt_dyn)" = "solid",
                    "Winner" = "solid", "Loser" = "solid",
                    "East" = "solid", "West" = "solid",
-                   "Early" = "solid", "Late" = "solid"),
+                   "Early" = "solid", "Late" = "solid",
+                   "Treated Once" = "solid"),
     ncol = 2
 ) {
   # Build subplots

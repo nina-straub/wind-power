@@ -220,6 +220,7 @@ walk(distances, function(dist) {
 })
 
 
+
 ############## Intensity Variation ##############
 
 # Summary table
@@ -265,22 +266,6 @@ walk(paste0("treat_", thresholds), function(thresh) {
 })
 
 
-############## Units treated once ##############
-# Check distribution of units treated once, twice, etc.
-df_did_ready %>%
-  group_by(ags) %>%
-  summarise(total_treat = sum(treat_nonabsorbing, na.rm = TRUE)) %>%
-  count(total_treat)
-
-# Check if 0 - 1 holds in filtered df
-df_treat_once %>%
-  group_by(ags) %>%
-  summarise(total_treat = sum(treat_nonabsorbing, na.rm = TRUE)) %>%
-  count(total_treat)
-
-# Estimation loop
-did_treat_once <- run_csdid_pipeline(df_treat_once, outcome_vars, label = "One-time Treatment")
-
 
 ###################### Identifying Assumptions and Alterntive Outcomes ######################
 # Does treatment affect net migration or agricultural land size? If yes --> Signs for sorting/negative effects of treatment
@@ -307,6 +292,113 @@ df_did_ready <- df_did_ready %>% arrange(ags, election_year) %>% group_by(ags) %
 did_lag <- run_csdid_pipeline(df_did_ready, outcome_vars, label = "Controlling for Lag", 
                               formula = ~ pop_density + east_ger + lag_far_right + lag_cdu_csu + lag_spd + lag_gruene
                               + lag_fdp + lag_linke_pds + lag_turnout)
+
+
+
+###################### Staggered DiD with continuous, absorbing treatment (Callaway, Goodman-Bacon & Sant'Anna, 2025) ######################
+
+# Notes (theoretical):
+# - Continuous treatment required either strong parallel trends assumption (which cannot be tested) OR estimate is biased
+# - No change in dose once treated (Potentially address this through binning?)
+# Two treatment effects: Level vs. slope
+# - Level treatment effect (ATT): Difference between untreated and treated under dose d
+# - Causal response (ACRT): Difference in a units potential outcome under marginal increase of dose d
+# --> Comparison between adjacent dose groups ≠ global effect (only with strong parallel trends assumption)
+
+# Notes (practical):
+# - contdid has mayor bugs described in this report: https://github.com/bcallaway11/contdid/issues/11
+# - Can only implement constellations "slope + eventstudy" and "level + eventstudy" (under transformations)
+# - Actually more interesting: "slope + dose" and "level + dose" --> But they don't work
+
+# Clean data
+df_clean <- df_did_ready %>%
+  # Drop periods and group without within-period-dose variation and filter all NA
+  filter(!is.na(treat_dose), !is.na(ags), !is.na(seq_time), !is.na(pop_density), election_year > 1994, !seq_group == 2)
+
+# Slope + eventstudy
+did_results_se <- map(outcome_vars, function(var) {
+  df_temp <- df_clean %>%
+    filter(!is.na(.data[[var]])) %>%
+    group_by(ags) %>% 
+    filter(n() == n_distinct(.$seq_time)) %>% 
+    ungroup()
+  res_cont_did <- cont_did(
+    yname = var,
+    tname = "seq_time",
+    idname = "ags",
+    dname = "treat_dose",
+    gname = "seq_group",
+    data = df_temp,
+    target_parameter = "slope",
+    aggregation     = "eventstudy",
+    treatment_type  = "continuous",
+    control_group   = "nevertreated",
+    biters          = 1000,
+    cband           = TRUE,
+    num_knots       = 2,
+    degree          = 5
+  )
+  return(list(res = res_cont_did))
+}) %>% set_names(outcome_vars)
+
+# saveRDS(did_results_se, '_results/hyp1_main_analyses/res_contdid_se.rds')
+# Watch out, file is about 2.6GB/637MB compressed
+
+#### Create event study plots for all outcomes ####
+plot_list_se <- map(outcome_vars, function(var) {
+  ggcont_did(did_results_se[[var]]$res, type = "slope") +
+    ggtitle(var) +
+    theme_minimal()
+})
+
+plot_contdid_se <- grid.arrange(grobs = plot_list_se, ncol = 3)
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_contdid_se.png", plot = plot_contdid_se, width = 12, height = 8, dpi = 300)
+
+
+# Level - eventstudy
+# Needs treat_dose to be between 0 and 1
+# Also: Balance panel outside loop
+df_clean <- df_clean %>%
+  mutate(treat_dose_squish = treat_dose / (1 + treat_dose))
+
+did_results_le <- map(outcome_vars, function(var) {
+  df_temp <- df_clean %>%
+    filter(!is.na(.data[[var]])) %>%
+    group_by(ags) %>% 
+    filter(n() == n_distinct(.$seq_time)) %>% 
+    ungroup()
+  res_cont_did <- cont_did(
+    yname = var,
+    tname = "seq_time",
+    idname = "ags",
+    dname = "treat_dose_squish",
+    gname = "seq_group",
+    data = df_temp,
+    target_parameter = "level",
+    aggregation     = "eventstudy",
+    treatment_type  = "continuous",
+    control_group   = "nevertreated",
+    biters          = 1000,
+    cband           = TRUE,
+    num_knots       = 2,
+    degree          = 5
+  )
+  return(list(res = res_cont_did))
+}) %>% set_names(outcome_vars)
+
+# saveRDS(did_results_le, '_results/hyp1_main_analyses/res_contdid_le.rds')
+# Watch out, file is about 2.5GB/750MB compressed
+
+#### Create event study plots for all outcomes ####
+plot_list_le <- map(outcome_vars, function(var) {
+  ggcont_did(did_results_le[[var]]$res, type = "slope") +
+    ggtitle(var) +
+    theme_minimal()
+})
+
+plot_contdid_le <- grid.arrange(grobs = plot_list_le, ncol = 3)
+# ggsave(filename = "_results/hyp1_main_analyses/_figures/plot_contdid_le.png", plot = plot_contdid_le, width = 12, height = 8, dpi = 300)
+
 
 
 ############## Counterfactual Estimator instead of CS-DiD ##############
@@ -406,8 +498,6 @@ did_results_detrended <- map(detrended_vars, function(outcome_var) {
   es <- aggte(atts, type = "dynamic", na.rm = TRUE)
   return(list(atts = atts, es = es))
 }) %>% set_names(detrended_vars)
-
-
 
 
 #### Create event study plots for all outcomes ####
