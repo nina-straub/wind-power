@@ -11,6 +11,7 @@ library(panelView)
 library(ggplot2)
 library(gridExtra)
 library(patchwork)
+library(cowplot)
 
 
 #### Data ####
@@ -271,7 +272,7 @@ p4 <- make_map(2025)
 
 plot_wt_dist <- grid.arrange(p1, p2, p3, p4, nrow = 2)
 dev.off()
-ggsave(filename = "_results//descriptive_results/plot_wt_dist.png", plot = plot_wt_dist, width = 12, height = 8, dpi = 300)
+# ggsave(filename = "_results//descriptive_results/plot_wt_dist.png", plot = plot_wt_dist, width = 12, height = 8, dpi = 300)
 
 
 

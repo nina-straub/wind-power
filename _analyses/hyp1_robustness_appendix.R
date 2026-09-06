@@ -251,8 +251,8 @@ etable(map(twfe_results, ~ .x$model), keep = "time_to_treatment")
 
 # Plot results
 plot_twfe <- function() {
-  par(mfrow = c(3, 3))
-  for (i in 1:9) {
+  par(mfrow = c(3, 2))
+  for (i in 1:6) {
     iplot(twfe_results[[i]], 
           main = paste(outcome_vars[i], "(Ref: 1 Year Pre-Treatment)"))
   }
