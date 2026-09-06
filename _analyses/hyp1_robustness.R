@@ -175,8 +175,10 @@ dcdh_options_base <- list(
 )
 
 did_dcdh_once <- run_dcdh_pipeline(df_treat_once, outcome_vars, label = "Treated Once",
-                                   effects_default = 4,
-                                   placebo_default = 3)
+                                   effects_default = 6,
+                                   placebo_default = 3,
+                                   placebo_afd = 1,
+                                   effects_afd = 3)
 
 df_once_dcdh <- bind_rows(did_dcdh_once)
 create_overlay_plot(df_once_dcdh)
@@ -186,8 +188,23 @@ create_overlay_plot(df_once_dcdh)
 ###################### Placebo Outcomes ######################
 # Does treatment affect net migration or agricultural land size? If yes --> Signs for sorting/negative effects of treatment
 # Does it affect education or share of female/foreign population? If yes --> Signs for sorting
-outcomes_alt <- c("net_migration", "agri_land", "educ", "share_fem", "share_foreign")
+outcomes_alt <- c("net_migration", "educ", "share_fem", "share_foreign")
+
+#### With CS ####
 did_alt <- run_csdid_pipeline(df_did_ready, outcomes_alt, label = "Test Assumptions", formula = ~ pop_density + east_ger)
+df_cs_alt <- extract_cs_df(did_alt, "Alternative Outcomes")
+create_overlay_plot(df_cs_alt)
+
+#### With dCDH ####
+did_dcdh_once <- run_dcdh_pipeline(df_did_ready, outcomes_alt, label = "Alternative Outcomes",
+                                   effects_default = 6,
+                                   placebo_default = 3,
+                                   placebo_afd = 1,
+                                   effects_afd = 3)
+
+df_once_dcdh <- bind_rows(did_dcdh_once)
+create_overlay_plot(df_once_dcdh)
+
 
 # How are socioeconomic indicators affected?
 # Could give idea on mechanisms --> If positive effect on tax/employment etc., positive perception of WP
@@ -196,6 +213,27 @@ did_se <- run_csdid_pipeline(df_did_ready, outcomes_se, label = "Socioeconomic I
 
 
 ###################### Anticipation ######################
+
+# Set CS options
+# Set vars for conditional parallel trends with xformla
+att_options_base_anti <- list(
+  tname = "seq_time",
+  idname = "ags",
+  gname = "seq_group",
+  panel = TRUE, 
+  allow_unbalanced_panel = TRUE,
+  clustervars = "ags",
+  control_group = "nevertreated",
+  anticipation = 1,
+  bstrap = TRUE,
+  biters = 1000
+)
+
+# Estimation loop
+did_cs_anti <- run_csdid_pipeline(df_did_ready, outcome_vars, options = att_options_base_anti, label = "Anticipation")
+
+df_cs_anti <- extract_cs_df(did_cs_anti, "Anticipation")
+create_overlay_plot(df_cs_anti)
 
 
 ###################### TWFE Event Study ######################
@@ -296,8 +334,7 @@ bacon_plot <- ggplot(bacon_plot_data, aes(x = weight, y = estimate, shape = type
 # - How to define treatment? Every unit receiving one turbine or should it be binned, somehow accounting for dose?
 
 # Outcomes (without AfD):
-outcome_vars_wo_afd <- c("turnout", "cdu", "csu", "spd", "fdp", 
-                  "linke_pds", "gruene", "far_right", "current_incumbent")
+outcome_vars_wo_afd <- c("turnout", "cdu_csu", "spd", "gruene", "far_right", "current_incumbent")
 
 # Set stages
 stages <- list(
@@ -334,7 +371,7 @@ seq_results <- map(outcome_vars_wo_afd, ~run_sequential_stages(.x, att_opt_seq, 
 seq_plots <- generate_sequential_plots(seq_results)
 
 # Combine into a 3x3 plot grid
-final_grid <- wrap_plots(seq_plots, ncol = 3, nrow = 3) + 
+final_grid <- wrap_plots(seq_plots, ncol = 2) + 
   plot_layout(guides = "collect") & 
   theme(legend.position = "bottom")
 

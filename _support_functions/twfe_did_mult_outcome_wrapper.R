@@ -124,8 +124,8 @@ run_dcdh_pipeline <- function(
     message(paste("Running dCDH for:", var, ifelse(label != "", paste("|", label), "")))
     
     # Dynamic window override
-    plc_val <- if (var == "afd") placebo_afd else placebo_default
-    eff_val <- if (var == "afd") effects_afd else effects_default
+    plc_val <- if (var %in% c("afd", "educ")) placebo_afd else placebo_default
+    eff_val <- if (var %in% c("afd", "educ")) effects_afd else effects_default
     
     # Build argument list
     args_list <- c(
@@ -198,23 +198,31 @@ create_overlay_plot <- function(
       "gruene"            = "Greens",
       "afd"               = "AfD",
       "current_incumbent" = "Current Incumbent",
-      "far_right"         = "Far Right"
+      "far_right"         = "Far Right",
+      "net_migration"     = "Net Migration",
+      "agri_land"         = "Agricultural Land",
+      "educ"              = "Education",
+      "share_fem"         = "Share Female",
+      "share_foreign"     = "Share Foreign"
     ),
     est_cols   = c("CS (did)" = "#2b5c8f", "dCDH (did_multiplegt_dyn)" = "#fd7107",
                    "Winner" = "#2b5c8f", "Loser" = "#fd7107",
                    "East" = "#2b5c8f", "West" = "#fd7107",
                    "Early" = "#2b5c8f", "Late" = "#fd7107",
-                   "Treated Once" = "#2b5c8f"),
+                   "Treated Once" = "#2b5c8f", "Alternative Outcomes" = "#fd7107",
+                   "Anticipation" = "#2b5c8f"),
     est_shapes = c("CS (did)" = 16,        "dCDH (did_multiplegt_dyn)" = 17,
                    "Winner" = 16, "Loser" = 17,
                    "East" = 16, "West" = 17,
                    "Early" = 16, "Late" = 17,
-                   "Treated Once" = 16),
+                   "Treated Once" = 16, "Alternative Outcomes" = 17,
+                   "Anticipation" = 16),
     est_lines  = c("CS (did)" = "solid",   "dCDH (did_multiplegt_dyn)" = "solid",
                    "Winner" = "solid", "Loser" = "solid",
                    "East" = "solid", "West" = "solid",
                    "Early" = "solid", "Late" = "solid",
-                   "Treated Once" = "solid"),
+                   "Treated Once" = "solid", "Alternative Outcomes" = "solid",
+                   "Anticipation" = "solid"),
     ncol = 2
 ) {
   # Build subplots

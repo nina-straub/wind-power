@@ -75,42 +75,6 @@ run_sequential_stages <- function(outcome, att_opts, stages) {
 }
 
 
-# Function to generate plots for each outcome and stores them in a list
-generate_sequential_plots <- function(results_list) {
-  
-  stage_colors <- c("#2166AC", "#D6604D", "#4DAC26", "#E69F00", "#999999")
-  
-  # Iterate over data and outcomes
-  plots <- purrr::imap(results_list, function(df, outcome_name) {
-    
-    ggplot(df, aes(x = event_time, y = att, color = stage, fill = stage, group = stage)) +
-      geom_hline(yintercept = 0,    linetype = "dashed", color = "gray50") +
-      geom_vline(xintercept = -0.5, linetype = "dotted", color = "gray50") +
-      geom_ribbon(aes(ymin = ci_lo, ymax = ci_hi), alpha = 0.12, color = NA) +
-      geom_line(linewidth = 0.8) +
-      geom_point(size = 2.0) +
-      scale_color_manual(values = stage_colors) +
-      scale_fill_manual(values  = stage_colors) +
-      labs(
-        title = outcome_name, # Dynamically uses the sublist/outcome name
-        subtitle = "Conditioned on identical prior history",
-        x = "Periods relative to treatment", 
-        y = "ATT", 
-        color = NULL, 
-        fill = NULL
-      ) +
-      theme_minimal(base_size = 9) +
-      theme(
-        plot.title    = element_text(face = "bold", hjust = 0.5),
-        plot.subtitle = element_text(size = 7, hjust = 0.5, color = "gray30")
-      )
-  })
-  
-  # Return named list of ggplot objects
-  return(plots)
-}
-
-
 # Generate summary table to check if pre-set stages will yield a reasonable sample size
 generate_pipeline_summary <- function(df, stages, initial_filter_groups = c(4, 0)) {
   # Initialize panel with Stage 1 base filtering
@@ -161,3 +125,76 @@ generate_pipeline_summary <- function(df, stages, initial_filter_groups = c(4, 0
   return(pipeline_summary_table)
 }
 
+# Function to generate plots for each outcome and stores them in a list
+generate_sequential_plots <- function(results_list) {
+  
+  stage_colors <- c("#2166AC", "#D6604D", "#4DAC26", "#E69F00", "#999999")
+  stage_shapes <- c(16, 17, 15, 18, 8)
+  
+  outcome_labels <- c(
+    "turnout"           = "Voter Turnout",
+    "cdu"               = "CDU",
+    "csu"               = "CSU",
+    "cdu_csu"           = "CDU/CSU",
+    "spd"               = "SPD",
+    "fdp"               = "FDP",
+    "linke_pds"         = "Die Linke/PDS",
+    "gruene"            = "Greens",
+    "afd"               = "AfD",
+    "far_right"         = "Far Right",
+    "current_incumbent" = "Current Incumbent"
+  )
+  
+  n_out <- length(results_list)
+  ncol  <- 2
+  
+  # Iterate over data and outcomes
+  plots <- purrr::imap(results_list, function(df, outcome_name) {
+    
+    idx <- which(names(results_list) == outcome_name)
+    
+    # Axis titles only on the left column / bottom row, mimicking global labels
+    y_lab <- if ((idx - 1) %% ncol == 0) "Estimate"   else NULL
+    x_lab <- if (idx > n_out - ncol)     "Event Time" else NULL
+    
+    # Keep stage order as produced by run_sequential_stages()
+    df <- dplyr::mutate(df, stage = factor(stage, levels = unique(df$stage)))
+    n_stages <- nlevels(df$stage)
+    
+    ggplot(df, aes(x = event_time, y = att,
+                   color = stage, fill = stage, shape = stage, group = stage)) +
+      geom_hline(yintercept = 0,    linetype = "dashed", color = "gray70", linewidth = 0.4) +
+      geom_vline(xintercept = -0.5, linetype = "dotted", color = "gray70", linewidth = 0.4) +
+      geom_ribbon(aes(ymin = ci_lo, ymax = ci_hi), alpha = 0.12, color = NA) +
+      geom_line(linewidth = 0.7) +
+      geom_point(size = 2.0) +
+      scale_x_continuous(breaks = seq(-6, 6, 1)) +
+      scale_y_continuous(labels = function(x) format(x, scientific = FALSE, trim = TRUE)) +
+      scale_color_manual(values = stage_colors[seq_len(n_stages)]) +
+      scale_fill_manual(values  = stage_colors[seq_len(n_stages)]) +
+      scale_shape_manual(values = stage_shapes[seq_len(n_stages)]) +
+      labs(
+        title    = unname(outcome_labels[outcome_name]) %||% outcome_name,
+        x        = x_lab,
+        y        = y_lab,
+        color    = NULL,
+        fill     = NULL,
+        shape    = NULL
+      ) +
+      guides(color = guide_legend(nrow = 1),
+             fill  = guide_legend(nrow = 1),
+             shape = guide_legend(nrow = 1)) +
+      theme_classic() +
+      theme(
+        plot.title       = element_text(face = "bold", size = 15, hjust = 0.5),
+        axis.text        = element_text(size = 13, color = "black"),
+        axis.title       = element_text(face = "bold", size = 14),
+        legend.title     = element_blank(),
+        legend.text      = element_text(size = 13, face = "bold"),
+        legend.key.width = unit(1.0, "cm")
+      )
+  })
+  
+  # Return named list of ggplot objects
+  return(plots)
+}

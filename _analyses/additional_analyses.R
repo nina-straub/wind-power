@@ -560,3 +560,68 @@ comparison_plots <- map(outcome_vars, compare_pretrends)
 grid.arrange(grobs = comparison_plots, ncol = 3)
 
 
+
+###################### NOTES FOR FUTURE: Binned Intensity ######################
+# Intensity analysis at the moment takes into account equal or greater, and does not sort units into discrete bins
+# Below code tries to fix this, would need to be finished
+
+# --- Summary table ---
+intensity_summary <- map_dfr(seq_along(thresholds), function(i) {
+  thresh <- thresholds[i]
+  gname  <- paste0("treat_", thresh)
+  
+  # Start with the base filter for the current threshold
+  df_thresh <- df_intensity %>% filter(!is.na(.data[[gname]]))
+  
+  # Mutually exclusive logic: exclude the NEXT threshold ONLY if they are treated (g > 0)
+  if (i < length(thresholds)) {
+    next_gname <- paste0("treat_", thresholds[i + 1])
+    df_thresh  <- df_thresh %>% 
+      filter(is.na(.data[[next_gname]]) | .data[[gname]] == 0)
+  }
+  
+  # Create a clean label for the interval
+  lbl <- if(i < length(thresholds)) paste0(thresh, "-", thresholds[i+1]-1) else paste0(">=", thresh)
+  
+  df_thresh %>%
+    group_by(ags) %>%
+    summarise(g = first(.data[[gname]]), .groups = "drop") %>%
+    summarise(
+      Interval  = lbl,
+      Units     = n(),
+      Treated   = sum(g > 0),
+      Control   = sum(g == 0)
+    )
+})
+
+print(intensity_summary)
+
+
+# --- Estimation loop ---
+did_intens <- map(seq_along(thresholds), function(i) {
+  thresh <- thresholds[i]
+  gname  <- paste0("treat_", thresh)
+  
+  df_thresh <- df_intensity %>% filter(!is.na(.data[[gname]]))
+  
+  # Mutually exclusive logic: exclude the NEXT threshold ONLY if they are treated (g > 0)
+  if (i < length(thresholds)) {
+    next_gname <- paste0("treat_", thresholds[i + 1])
+    df_thresh  <- df_thresh %>% 
+      filter(is.na(.data[[next_gname]]) | .data[[gname]] == 0)
+  }
+  
+  lbl <- if(i < length(thresholds)) paste0(thresh, "-", thresholds[i+1]-1) else paste0(">=", thresh)
+  
+  run_csdid_pipeline(
+    data = df_thresh, 
+    outcomes = outcome_vars, 
+    label = paste("Intensity Interval:", lbl), 
+    options = att_options_base,
+    gname = gname
+  )
+}) %>% set_names(paste0("treat_", thresholds))
+
+
+
+
