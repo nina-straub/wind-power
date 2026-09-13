@@ -86,19 +86,19 @@ did_results_uni <- map(outcome_vars, function(outcome_vars) {
   
   atts <- do.call(att_gt, c(list(yname = outcome_vars, base_period = "universal"), att_options_base))
   
-  es <- aggte(atts, type = "dynamic", na.rm = TRUE)
+  es <- aggte(atts, type = "dynamic", na.rm = TRUE, min_e = -4, max_e = 5)
   return(list(atts = atts, es = es))
 }) %>% set_names(outcome_vars)
 
 
 #### Run HonestDiD estimations ####
 # Smoothness
-honest_smooth_results <- map(outcome_vars, ~run_honest_smoothness(.x, did_results_uni)) %>% set_names(outcome_vars)
+honest_smooth_results <- map(outcome_vars, ~run_honest_smoothness(.x, did_results_uni, Mvec = seq(0, 0.01, by = 0.002))) %>% set_names(outcome_vars)
 
 # saveRDS(honest_smooth_results, '_results/hyp1_main_analyses/res_honest_smooth.rds')
 
 # Relative Magnitude
-honest_rm_results <- map(outcome_vars, ~run_honest_rm(.x, did_results_uni, mbar_seq = seq(0, 07., by = 0.07))) %>% set_names(outcome_vars)
+honest_rm_results <- map(outcome_vars, ~run_honest_rm(.x, did_results_uni, mbar_seq = seq(0, 0.8, by = 0.08))) %>% set_names(outcome_vars)
 
 # saveRDS(honest_rm_results, '_results/hyp1_main_analyses/res_honest_rm.rds')
 

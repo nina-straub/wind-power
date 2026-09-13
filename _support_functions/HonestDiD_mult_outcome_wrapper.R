@@ -7,14 +7,15 @@ library(gridExtra)
 
 
 # Function for HonestDiD Smoothness Sensitivity Test for Multiple Outcomes
-run_honest_smoothness <- function(var_name, results_list) {
+run_honest_smoothness <- function(var_name, results_list, ...) {
   # Extract event study object from CS-DiD results
   es_obj <- results_list[[var_name]]$es
   # Run smoothness sensitivity analysis for e = 0
   sens_smooth <- honest_did(
     es = es_obj,
-    e = 0,
-    type = "smoothness"
+    e = 1,
+    type = "smoothness",
+    ...
   )
   return(sens_smooth)
 }
@@ -27,7 +28,7 @@ run_honest_rm <- function(var_name, results_list, mbar_seq = seq(0, 0.5, by = 0.
   # Run relative magnitude sensitivity analysis for e = 0
   sens_rm <- honest_did(
     es = es_obj,
-    e = 0,
+    e = 1,
     type = "relative_magnitude",
     Mbarvec = mbar_seq
   )
