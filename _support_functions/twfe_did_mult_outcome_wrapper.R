@@ -203,7 +203,8 @@ create_overlay_plot <- function(
       "agri_land"         = "Agricultural Land",
       "educ"              = "Education",
       "share_fem"         = "Share Female",
-      "share_foreign"     = "Share Foreign"
+      "share_foreign"     = "Share Foreign",
+      "Y"                 = "Y"
     ),
     est_cols   = c("CS (did)" = "#2b5c8f", "dCDH (did_multiplegt_dyn)" = "#fd7107",
                    "Winner" = "#2b5c8f", "Loser" = "#fd7107",
